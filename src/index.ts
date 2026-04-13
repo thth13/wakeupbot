@@ -1,40 +1,12 @@
 import { config } from "dotenv";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { Telegraf } from "telegraf";
+import { Challenge, ChatState, MongoStorage, PendingChallenge } from "./storage";
 
 config();
 
-interface PendingChallenge {
-  id: string;
-  kind: "morning" | "check";
-  expression: string;
-  answer: number;
-  sentAt: string;
-}
-
-interface ChatState {
-  chatId: number;
-  firstName?: string;
-  username?: string;
-  userId?: number;
-  registeredAt: string;
-  lastInteractionAt: string;
-  pendingChallenges: PendingChallenge[];
-}
-
-interface BotState {
-  chats: Record<string, ChatState>;
-  lastDispatchBySlot: Record<string, string>;
-}
-
-interface Challenge {
-  expression: string;
-  answer: number;
-}
-
 const token = process.env.BOT_TOKEN;
-const stateFilePath = path.join(process.cwd(), "data", "bot-state.json");
+const mongoUri = process.env.MONGODB_URI;
+const mongoDbName = process.env.MONGODB_DB_NAME ?? "wakeupbot";
 const schedulerIntervalMs = 30_000;
 const wakeupSlots = [
   {
@@ -51,54 +23,16 @@ const wakeupSlots = [
   }
 ] as const;
 
-let botState: BotState = {
-  chats: {},
-  lastDispatchBySlot: {}
-};
-
 if (!token) {
   throw new Error("BOT_TOKEN is required in the environment");
 }
 
+if (!mongoUri) {
+  throw new Error("MONGODB_URI is required in the environment");
+}
+
 const bot = new Telegraf(token);
-
-const createDefaultState = (): BotState => ({
-  chats: {},
-  lastDispatchBySlot: {}
-});
-
-const ensureStateDirectory = async (): Promise<void> => {
-  await mkdir(path.dirname(stateFilePath), { recursive: true });
-};
-
-const saveState = async (): Promise<void> => {
-  await ensureStateDirectory();
-  await writeFile(stateFilePath, JSON.stringify(botState, null, 2));
-};
-
-const loadState = async (): Promise<void> => {
-  try {
-    const rawState = await readFile(stateFilePath, "utf8");
-    const parsedState = JSON.parse(rawState) as Partial<BotState>;
-
-    botState = {
-      chats: parsedState.chats ?? {},
-      lastDispatchBySlot: parsedState.lastDispatchBySlot ?? {}
-    };
-  } catch (error) {
-    const isMissingFile =
-      error instanceof Error && "code" in error && error.code === "ENOENT";
-
-    if (!isMissingFile) {
-      throw error;
-    }
-
-    botState = createDefaultState();
-    await saveState();
-  }
-};
-
-const toChatKey = (chatId: number): string => String(chatId);
+const storage = new MongoStorage(mongoUri, mongoDbName);
 
 const getDateKey = (date: Date): string => {
   const year = date.getFullYear();
@@ -115,20 +49,6 @@ const formatTime = (date: Date): string => {
   return `${hours}:${minutes}`;
 };
 
-const pruneStaleChallenges = (challenges: PendingChallenge[], now: Date): PendingChallenge[] => {
-  const maxAgeMs = 24 * 60 * 60 * 1000;
-
-  return challenges.filter((challenge) => {
-    const sentAt = Date.parse(challenge.sentAt);
-
-    if (Number.isNaN(sentAt)) {
-      return false;
-    }
-
-    return now.getTime() - sentAt <= maxAgeMs;
-  });
-};
-
 const createChallenge = (): Challenge => {
   const firstNumber = Math.floor(Math.random() * 900) + 100;
   const secondNumber = Math.floor(Math.random() * 900) + 100;
@@ -137,107 +57,6 @@ const createChallenge = (): Challenge => {
     expression: `${firstNumber} + ${secondNumber}`,
     answer: firstNumber + secondNumber
   };
-};
-
-const upsertChat = async (
-  chatId: number,
-  details: {
-    firstName?: string;
-    username?: string;
-    userId?: number;
-  }
-): Promise<void> => {
-  const nowIso = new Date().toISOString();
-  const chatKey = toChatKey(chatId);
-  const existingChat = botState.chats[chatKey];
-
-  botState.chats[chatKey] = {
-    chatId,
-    firstName: details.firstName ?? existingChat?.firstName,
-    username: details.username ?? existingChat?.username,
-    userId: details.userId ?? existingChat?.userId,
-    registeredAt: existingChat?.registeredAt ?? nowIso,
-    lastInteractionAt: nowIso,
-    pendingChallenges: pruneStaleChallenges(existingChat?.pendingChallenges ?? [], new Date())
-  };
-
-  await saveState();
-};
-
-const removeChat = async (chatId: number): Promise<boolean> => {
-  const chatKey = toChatKey(chatId);
-
-  if (!botState.chats[chatKey]) {
-    return false;
-  }
-
-  delete botState.chats[chatKey];
-  await saveState();
-
-  return true;
-};
-
-const setPendingChallenge = async (
-  chatId: number,
-  kind: PendingChallenge["kind"],
-  challenge: Challenge,
-  sentAt: Date
-): Promise<void> => {
-  const chatKey = toChatKey(chatId);
-  const existingChat = botState.chats[chatKey];
-
-  if (!existingChat) {
-    return;
-  }
-
-  existingChat.pendingChallenges = [
-    ...pruneStaleChallenges(existingChat.pendingChallenges, sentAt).filter(
-      (pendingChallenge) => pendingChallenge.kind !== kind
-    ),
-    {
-      id: `${kind}-${sentAt.toISOString()}`,
-      kind,
-      expression: challenge.expression,
-      answer: challenge.answer,
-      sentAt: sentAt.toISOString()
-    }
-  ];
-  existingChat.lastInteractionAt = sentAt.toISOString();
-
-  await saveState();
-};
-
-const findMatchingChallenge = (
-  chatId: number,
-  answer: number,
-  now: Date
-): PendingChallenge | undefined => {
-  const chatState = botState.chats[toChatKey(chatId)];
-
-  if (!chatState) {
-    return undefined;
-  }
-
-  chatState.pendingChallenges = pruneStaleChallenges(chatState.pendingChallenges, now);
-
-  return [...chatState.pendingChallenges]
-    .sort((left, right) => Date.parse(right.sentAt) - Date.parse(left.sentAt))
-    .find((challenge) => challenge.answer === answer);
-};
-
-const clearChallenge = async (chatId: number, challengeId: string): Promise<void> => {
-  const chatState = botState.chats[toChatKey(chatId)];
-
-  if (!chatState) {
-    return;
-  }
-
-  chatState.pendingChallenges = chatState.pendingChallenges.filter(
-    (challenge) => challenge.id !== challengeId
-  );
-  chatState.lastInteractionAt = new Date().toISOString();
-
-  await saveState();
 };
 
 const sendChallengeToChat = async (
@@ -257,7 +76,7 @@ const sendChallengeToChat = async (
     ].join("\n")
   );
 
-  await setPendingChallenge(chatState.chatId, kind, challenge, now);
+  await storage.setPendingChallenge(chatState.chatId, kind, challenge, now);
 };
 
 const runSchedulerTick = async (): Promise<void> => {
@@ -270,11 +89,11 @@ const runSchedulerTick = async (): Promise<void> => {
       continue;
     }
 
-    if (botState.lastDispatchBySlot[slot.key] === currentDate) {
+    if (await storage.wasSlotDispatched(slot.key, currentDate)) {
       continue;
     }
 
-    const chats = Object.values(botState.chats);
+    const chats = await storage.listChats();
 
     for (const chatState of chats) {
       try {
@@ -284,8 +103,7 @@ const runSchedulerTick = async (): Promise<void> => {
       }
     }
 
-    botState.lastDispatchBySlot[slot.key] = currentDate;
-    await saveState();
+    await storage.markSlotDispatched(slot.key, currentDate, now);
   }
 };
 
@@ -299,7 +117,7 @@ const startScheduler = (): void => {
 bot.start(async (context) => {
   const firstName = context.from?.first_name ?? "there";
 
-  await upsertChat(context.chat.id, {
+  await storage.upsertChat(context.chat.id, {
     firstName: context.from?.first_name,
     username: context.from?.username,
     userId: context.from?.id
@@ -317,7 +135,7 @@ bot.start(async (context) => {
 });
 
 bot.command("stop", async (context) => {
-  const wasRemoved = await removeChat(context.chat.id);
+  const wasRemoved = await storage.removeChat(context.chat.id);
 
   await context.reply(
     wasRemoved
@@ -327,7 +145,7 @@ bot.command("stop", async (context) => {
 });
 
 bot.command("status", async (context) => {
-  const chatState = botState.chats[toChatKey(context.chat.id)];
+  const chatState = await storage.getChat(context.chat.id);
 
   if (!chatState) {
     await context.reply("This chat is not subscribed yet. Use /start.");
@@ -356,17 +174,18 @@ bot.on("text", async (context) => {
     return;
   }
 
-  await upsertChat(context.chat.id, {
+  const chatState = await storage.upsertChat(context.chat.id, {
     firstName: context.from?.first_name,
     username: context.from?.username,
     userId: context.from?.id
   });
 
-  const matchingChallenge = findMatchingChallenge(context.chat.id, numericAnswer, new Date());
+  const solvedAt = new Date();
+  const matchingChallenge = await storage.findMatchingChallenge(context.chat.id, numericAnswer, solvedAt);
 
   if (!matchingChallenge) {
-    const chatState = botState.chats[toChatKey(context.chat.id)];
-    const hasPendingChallenges = (chatState?.pendingChallenges.length ?? 0) > 0;
+    const freshChatState = await storage.getChat(context.chat.id);
+    const hasPendingChallenges = (freshChatState?.pendingChallenges.length ?? 0) > 0;
 
     if (hasPendingChallenges) {
       await context.reply("Wrong answer. Try again.");
@@ -375,7 +194,8 @@ bot.on("text", async (context) => {
     return;
   }
 
-  await clearChallenge(context.chat.id, matchingChallenge.id);
+  await storage.clearChallenge(context.chat.id, matchingChallenge.id, solvedAt);
+  await storage.recordWakeSuccess(chatState, matchingChallenge, solvedAt);
 
   await context.reply(
     matchingChallenge.kind === "morning"
@@ -385,7 +205,7 @@ bot.on("text", async (context) => {
 });
 
 const launch = async (): Promise<void> => {
-  await loadState();
+  await storage.connect();
 
   await bot.telegram.setMyCommands([
     {
@@ -410,5 +230,15 @@ const launch = async (): Promise<void> => {
 
 void launch();
 
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
+const shutdown = async (signal: "SIGINT" | "SIGTERM"): Promise<void> => {
+  bot.stop(signal);
+  await storage.close();
+};
+
+process.once("SIGINT", () => {
+  void shutdown("SIGINT");
+});
+
+process.once("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});
