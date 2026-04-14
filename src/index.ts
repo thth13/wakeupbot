@@ -87,6 +87,36 @@ const formatStatsMessage = (stats: WakeStats): string => {
   return lines.join("\n");
 };
 
+const shuffleNumbers = (numbers: number[]): number[] => {
+  const result = [...numbers];
+
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    const currentValue = result[index];
+
+    result[index] = result[swapIndex];
+    result[swapIndex] = currentValue;
+  }
+
+  return result;
+};
+
+const createAnswerOptions = (correctAnswer: number): number[] => {
+  const options = new Set<number>([correctAnswer]);
+
+  while (options.size < 4) {
+    const delta = Math.floor(Math.random() * 140) + 10;
+    const direction = Math.random() < 0.5 ? -1 : 1;
+    const candidate = correctAnswer + delta * direction;
+
+    if (candidate > 0) {
+      options.add(candidate);
+    }
+  }
+
+  return shuffleNumbers([...options]);
+};
+
 const sendStats = async (chatId: number, reply: (message: string) => Promise<unknown>): Promise<void> => {
   const chatState = await storage.getChat(chatId);
 
@@ -102,10 +132,12 @@ const sendStats = async (chatId: number, reply: (message: string) => Promise<unk
 const createChallenge = (): Challenge => {
   const firstNumber = Math.floor(Math.random() * 900) + 100;
   const secondNumber = Math.floor(Math.random() * 900) + 100;
+  const answer = firstNumber + secondNumber;
 
   return {
     expression: `${firstNumber} + ${secondNumber}`,
-    answer: firstNumber + secondNumber
+    answer,
+    options: createAnswerOptions(answer)
   };
 };
 
@@ -116,17 +148,23 @@ const sendChallengeToChat = async (
   now: Date
 ): Promise<void> => {
   const challenge = createChallenge();
+  const challengeId = `${kind}-${now.toISOString()}`;
 
   await bot.telegram.sendMessage(
     chatState.chatId,
     [
       `${label} wake-up check.`,
       `Solve: ${challenge.expression}`,
-      "Send only the number as your answer."
-    ].join("\n")
+      "Choose the correct answer:"
+    ].join("\n"),
+    Markup.inlineKeyboard(
+      challenge.options.map((option) => [
+        Markup.button.callback(String(option), `answer:${challengeId}:${option}`)
+      ])
+    )
   );
 
-  await storage.setPendingChallenge(chatState.chatId, kind, challenge, now);
+  await storage.setPendingChallenge(chatState.chatId, kind, challenge, challengeId, now);
 };
 
 const runSchedulerTick = async (): Promise<void> => {
@@ -178,7 +216,7 @@ bot.start(async (context) => {
       `Hello, ${firstName}.`,
       "Wakeupbot is online.",
       "Every day at 06:00 and 06:30 I will send a math task.",
-      "Reply with the sum as a number.",
+      "Each task is a quiz with answer options.",
       "Use /stop if you want to unsubscribe.",
       `Tap \"${statsButtonText}\" to see your stats.`
     ].join("\n"),
@@ -223,6 +261,46 @@ bot.hears(statsButtonText, async (context) => {
   await sendStats(context.chat.id, async (message) => context.reply(message, mainKeyboard));
 });
 
+bot.action(/^answer:([^:]+):(-?\d+)$/, async (context) => {
+  const [, challengeId, selectedAnswerRaw] = context.match;
+  const selectedAnswer = Number.parseInt(selectedAnswerRaw, 10);
+  const chatId = context.callbackQuery.message?.chat.id;
+
+  await context.answerCbQuery();
+
+  if (!Number.isInteger(selectedAnswer) || chatId === undefined) {
+    return;
+  }
+
+  const chatState = await storage.upsertChat(chatId, {
+    firstName: context.from?.first_name,
+    username: context.from?.username,
+    userId: context.from?.id
+  });
+  const solvedAt = new Date();
+  const matchingChallenge = await storage.findChallengeById(chatId, challengeId, solvedAt);
+
+  if (!matchingChallenge) {
+    await context.reply("This task is no longer active.");
+    return;
+  }
+
+  if (selectedAnswer !== matchingChallenge.answer) {
+    await context.reply("Wrong answer. Try another option.");
+    return;
+  }
+
+  await storage.clearChallenge(chatId, matchingChallenge.id, solvedAt);
+  await storage.recordWakeSuccess(chatState, matchingChallenge, solvedAt);
+
+  await context.editMessageReplyMarkup(undefined);
+  await context.reply(
+    matchingChallenge.kind === "morning"
+      ? "Correct. First wake-up check passed."
+      : "Correct. Second wake-up check passed."
+  );
+});
+
 bot.on("text", async (context) => {
   const text = context.message.text.trim();
 
@@ -230,40 +308,12 @@ bot.on("text", async (context) => {
     return;
   }
 
-  const numericAnswer = Number.parseInt(text, 10);
+  const chatState = await storage.getChat(context.chat.id);
+  const hasPendingChallenges = (chatState?.pendingChallenges.length ?? 0) > 0;
 
-  if (!Number.isInteger(numericAnswer) || String(numericAnswer) !== text) {
-    return;
+  if (hasPendingChallenges) {
+    await context.reply("Choose one of the answer buttons under the task.");
   }
-
-  const chatState = await storage.upsertChat(context.chat.id, {
-    firstName: context.from?.first_name,
-    username: context.from?.username,
-    userId: context.from?.id
-  });
-
-  const solvedAt = new Date();
-  const matchingChallenge = await storage.findMatchingChallenge(context.chat.id, numericAnswer, solvedAt);
-
-  if (!matchingChallenge) {
-    const freshChatState = await storage.getChat(context.chat.id);
-    const hasPendingChallenges = (freshChatState?.pendingChallenges.length ?? 0) > 0;
-
-    if (hasPendingChallenges) {
-      await context.reply("Wrong answer. Try again.");
-    }
-
-    return;
-  }
-
-  await storage.clearChallenge(context.chat.id, matchingChallenge.id, solvedAt);
-  await storage.recordWakeSuccess(chatState, matchingChallenge, solvedAt);
-
-  await context.reply(
-    matchingChallenge.kind === "morning"
-      ? "Correct. First wake-up check passed."
-      : "Correct. Second wake-up check passed."
-  );
 });
 
 const launch = async (): Promise<void> => {

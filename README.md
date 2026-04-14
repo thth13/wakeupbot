@@ -13,7 +13,8 @@ Telegram bot on TypeScript for early wake-up checks.
 
 - Every day at `06:00` the bot sends a task with the sum of two three-digit numbers.
 - Every day at `06:30` the bot sends one more task to confirm the user is awake.
-- The user must reply with the numeric answer, for example `742`.
+- Each task is sent as a quiz with four answer options.
+- The user must choose the correct option under the message.
 - The schedule uses the server local time.
 - State is stored in MongoDB.
 - Wake-up history is stored in daily documents keyed by the wake date, for example `2026-04-13`.

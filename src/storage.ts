@@ -3,6 +3,7 @@ import { Collection, Db, MongoClient } from "mongodb";
 export interface Challenge {
   expression: string;
   answer: number;
+  options: number[];
 }
 
 export interface PendingChallenge {
@@ -10,6 +11,7 @@ export interface PendingChallenge {
   kind: "morning" | "check";
   expression: string;
   answer: number;
+  options: number[];
   sentAt: Date;
 }
 
@@ -184,6 +186,7 @@ export class MongoStorage {
     chatId: number,
     kind: PendingChallenge["kind"],
     challenge: Challenge,
+    challengeId: string,
     sentAt: Date
   ): Promise<void> {
     const chatKey = String(chatId);
@@ -201,10 +204,11 @@ export class MongoStorage {
           (pendingChallenge) => pendingChallenge.kind !== kind
         ),
         {
-          id: `${kind}-${sentAt.toISOString()}`,
+          id: challengeId,
           kind,
           expression: challenge.expression,
           answer: challenge.answer,
+          options: challenge.options,
           sentAt
         }
       ]
@@ -213,9 +217,9 @@ export class MongoStorage {
     await this.chats.replaceOne({ _id: chatKey }, nextChat);
   }
 
-  public async findMatchingChallenge(
+  public async findChallengeById(
     chatId: number,
-    answer: number,
+    challengeId: string,
     now: Date
   ): Promise<PendingChallenge | undefined> {
     const chatKey = String(chatId);
@@ -239,9 +243,7 @@ export class MongoStorage {
       );
     }
 
-    return [...pendingChallenges]
-      .sort((left, right) => right.sentAt.getTime() - left.sentAt.getTime())
-      .find((challenge) => challenge.answer === answer);
+    return pendingChallenges.find((challenge) => challenge.id === challengeId);
   }
 
   public async clearChallenge(chatId: number, challengeId: string, clearedAt: Date): Promise<void> {
