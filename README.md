@@ -24,7 +24,14 @@ Telegram bot on TypeScript for early wake-up checks.
 
 - `/start` enables daily wake-up tasks for the current chat
 - `/status` shows current subscription state
+- `/stats` shows wake-up statistics
 - `/stop` disables daily wake-up tasks for the current chat
+
+## Statistics
+
+- The bot shows a `My stats` button after `/start`.
+- Statistics are built from `wake_days` documents in MongoDB.
+- The stats response includes total recorded wake days, fully confirmed days, average wake-up time, and the latest recorded days.
 
 ## Scripts
 

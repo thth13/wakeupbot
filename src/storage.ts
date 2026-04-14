@@ -45,6 +45,15 @@ export interface WakeDayRecord extends ChatProfile {
   updatedAt: Date;
 }
 
+export interface WakeStats {
+  totalWakeDays: number;
+  fullyConfirmedDays: number;
+  firstWakeDate?: string;
+  lastWakeDate?: string;
+  averageWakeUpMinutes?: number;
+  recentWakeDays: WakeDayRecord[];
+}
+
 interface SchedulerState {
   _id: string;
   lastDispatchDate?: string;
@@ -307,5 +316,37 @@ export class MongoStorage {
       },
       { upsert: true }
     );
+  }
+
+  public async getWakeStats(chatId: number, recentLimit = 7): Promise<WakeStats> {
+    const wakeDays = await this.wakeDays
+      .find({ chatId, wokeUpAt: { $exists: true } })
+      .sort({ wakeDate: -1 })
+      .toArray();
+
+    const fullyConfirmedDays = wakeDays.filter((wakeDay) => {
+      const kinds = new Set(wakeDay.wakeEvents.map((event) => event.kind));
+
+      return kinds.has("morning") && kinds.has("check");
+    }).length;
+
+    const wakeMinutes = wakeDays
+      .map((wakeDay) => wakeDay.wokeUpAt)
+      .filter((wokeUpAt): wokeUpAt is Date => wokeUpAt instanceof Date)
+      .map((wokeUpAt) => wokeUpAt.getHours() * 60 + wokeUpAt.getMinutes());
+
+    const averageWakeUpMinutes =
+      wakeMinutes.length > 0
+        ? Math.round(wakeMinutes.reduce((sum, minutes) => sum + minutes, 0) / wakeMinutes.length)
+        : undefined;
+
+    return {
+      totalWakeDays: wakeDays.length,
+      fullyConfirmedDays,
+      firstWakeDate: wakeDays.at(-1)?.wakeDate,
+      lastWakeDate: wakeDays[0]?.wakeDate,
+      averageWakeUpMinutes: averageWakeUpMinutes,
+      recentWakeDays: wakeDays.slice(0, recentLimit)
+    };
   }
 }

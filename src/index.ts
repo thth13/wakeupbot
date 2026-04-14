@@ -1,6 +1,6 @@
 import { config } from "dotenv";
-import { Telegraf } from "telegraf";
-import { Challenge, ChatState, MongoStorage, PendingChallenge } from "./storage";
+import { Markup, Telegraf } from "telegraf";
+import { Challenge, ChatState, MongoStorage, PendingChallenge, WakeStats } from "./storage";
 
 config();
 
@@ -8,6 +8,7 @@ const token = process.env.BOT_TOKEN;
 const mongoUri = process.env.MONGODB_URI;
 const mongoDbName = process.env.MONGODB_DB_NAME ?? "wakeupbot";
 const schedulerIntervalMs = 30_000;
+const statsButtonText = "My stats";
 const wakeupSlots = [
   {
     key: "morning",
@@ -33,6 +34,7 @@ if (!mongoUri) {
 
 const bot = new Telegraf(token);
 const storage = new MongoStorage(mongoUri, mongoDbName);
+const mainKeyboard = Markup.keyboard([[statsButtonText]]).resize();
 
 const getDateKey = (date: Date): string => {
   const year = date.getFullYear();
@@ -47,6 +49,54 @@ const formatTime = (date: Date): string => {
   const minutes = String(date.getMinutes()).padStart(2, "0");
 
   return `${hours}:${minutes}`;
+};
+
+const formatMinutesAsTime = (totalMinutes: number): string => {
+  const hours = String(Math.floor(totalMinutes / 60)).padStart(2, "0");
+  const minutes = String(totalMinutes % 60).padStart(2, "0");
+
+  return `${hours}:${minutes}`;
+};
+
+const formatStatsMessage = (stats: WakeStats): string => {
+  const lines = [
+    "Your wake-up stats.",
+    `Wake days: ${stats.totalWakeDays}`,
+    `Fully confirmed days: ${stats.fullyConfirmedDays}`,
+    `Average wake-up time: ${
+      stats.averageWakeUpMinutes !== undefined
+        ? formatMinutesAsTime(stats.averageWakeUpMinutes)
+        : "not enough data"
+    }`,
+    `First recorded day: ${stats.firstWakeDate ?? "not enough data"}`,
+    `Last recorded day: ${stats.lastWakeDate ?? "not enough data"}`
+  ];
+
+  if (stats.recentWakeDays.length > 0) {
+    lines.push("Recent days:");
+
+    for (const wakeDay of stats.recentWakeDays) {
+      const kinds = new Set(wakeDay.wakeEvents.map((event) => event.kind));
+      const wakeTime = wakeDay.wokeUpAt ? formatTime(wakeDay.wokeUpAt) : "--:--";
+      const status = kinds.has("morning") && kinds.has("check") ? "full" : "partial";
+
+      lines.push(`${wakeDay.wakeDate}: ${wakeTime} (${status})`);
+    }
+  }
+
+  return lines.join("\n");
+};
+
+const sendStats = async (chatId: number, reply: (message: string) => Promise<unknown>): Promise<void> => {
+  const chatState = await storage.getChat(chatId);
+
+  if (!chatState) {
+    await reply("This chat is not subscribed yet. Use /start.");
+    return;
+  }
+
+  const stats = await storage.getWakeStats(chatId);
+  await reply(formatStatsMessage(stats));
 };
 
 const createChallenge = (): Challenge => {
@@ -129,8 +179,10 @@ bot.start(async (context) => {
       "Wakeupbot is online.",
       "Every day at 06:00 and 06:30 I will send a math task.",
       "Reply with the sum as a number.",
-      "Use /stop if you want to unsubscribe."
-    ].join("\n")
+      "Use /stop if you want to unsubscribe.",
+      `Tap \"${statsButtonText}\" to see your stats.`
+    ].join("\n"),
+    mainKeyboard
   );
 });
 
@@ -140,7 +192,8 @@ bot.command("stop", async (context) => {
   await context.reply(
     wasRemoved
       ? "You are unsubscribed. Daily wake-up checks are disabled for this chat."
-      : "This chat is not subscribed yet. Use /start first."
+      : "This chat is not subscribed yet. Use /start first.",
+    wasRemoved ? Markup.removeKeyboard() : mainKeyboard
   );
 });
 
@@ -157,8 +210,17 @@ bot.command("status", async (context) => {
       "Wake-up checks are enabled.",
       `Active tasks: ${chatState.pendingChallenges.length}`,
       "Schedule: 06:00 and 06:30 server local time."
-    ].join("\n")
+    ].join("\n"),
+    mainKeyboard
   );
+});
+
+bot.command("stats", async (context) => {
+  await sendStats(context.chat.id, async (message) => context.reply(message, mainKeyboard));
+});
+
+bot.hears(statsButtonText, async (context) => {
+  await sendStats(context.chat.id, async (message) => context.reply(message, mainKeyboard));
 });
 
 bot.on("text", async (context) => {
@@ -215,6 +277,10 @@ const launch = async (): Promise<void> => {
     {
       command: "status",
       description: "Show wake-up check status"
+    },
+    {
+      command: "stats",
+      description: "Show wake-up statistics"
     },
     {
       command: "stop",
