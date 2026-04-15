@@ -1,6 +1,13 @@
 import { config } from "dotenv";
 import { Markup, Telegraf } from "telegraf";
-import { Challenge, ChatState, MongoStorage, PendingChallenge, WakeStats } from "./storage";
+import {
+  Challenge,
+  ChatState,
+  MongoStorage,
+  OverallWakeStats,
+  PendingChallenge,
+  WakeStats
+} from "./storage";
 
 config();
 
@@ -9,6 +16,7 @@ const mongoUri = process.env.MONGODB_URI;
 const mongoDbName = process.env.MONGODB_DB_NAME ?? "wakeupbot";
 const schedulerIntervalMs = 30_000;
 const statsButtonText = "My stats";
+const overallStatsButtonText = "Overall stats";
 const wakeupSlots = [
   {
     key: "morning",
@@ -34,7 +42,7 @@ if (!mongoUri) {
 
 const bot = new Telegraf(token);
 const storage = new MongoStorage(mongoUri, mongoDbName);
-const mainKeyboard = Markup.keyboard([[statsButtonText]]).resize();
+const mainKeyboard = Markup.keyboard([[statsButtonText, overallStatsButtonText]]).resize();
 
 const getDateKey = (date: Date): string => {
   const year = date.getFullYear();
@@ -107,6 +115,22 @@ const formatStatsMessage = (stats: WakeStats): string => {
   return lines.join("\n");
 };
 
+const formatOverallStatsMessage = (stats: OverallWakeStats): string => {
+  const lines = ["Overall stats.", `Users: ${stats.totalUsers}`];
+
+  if (stats.users.length > 0) {
+    lines.push("Users list:");
+
+    for (const user of stats.users) {
+      const squares = user.recentDays.map((day) => (day.status === "success" ? "🟩" : "🟥")).join("");
+
+      lines.push(`${user.displayName}: ${squares || "no data"}`);
+    }
+  }
+
+  return lines.join("\n");
+};
+
 const shuffleNumbers = (numbers: number[]): number[] => {
   const result = [...numbers];
 
@@ -147,6 +171,18 @@ const sendStats = async (chatId: number, reply: (message: string) => Promise<unk
 
   const stats = await storage.getWakeStats(chatId);
   await reply(formatStatsMessage(stats));
+};
+
+const sendOverallStats = async (chatId: number, reply: (message: string) => Promise<unknown>): Promise<void> => {
+  const chatState = await storage.getChat(chatId);
+
+  if (!chatState) {
+    await reply("This chat is not subscribed yet. Use /start.");
+    return;
+  }
+
+  const stats = await storage.getOverallWakeStats();
+  await reply(formatOverallStatsMessage(stats));
 };
 
 const createChallenge = (): Challenge => {
@@ -238,7 +274,8 @@ bot.start(async (context) => {
       "Every day at 06:00 and 06:30 I will send a math task.",
       "Each task is a quiz with answer options.",
       "Use /stop if you want to unsubscribe.",
-      `Tap \"${statsButtonText}\" to see your stats.`
+      `Tap \"${statsButtonText}\" to see your stats.`,
+      `Tap \"${overallStatsButtonText}\" to see all users.`
     ].join("\n"),
     mainKeyboard
   );
@@ -277,8 +314,16 @@ bot.command("stats", async (context) => {
   await sendStats(context.chat.id, async (message) => context.reply(message, mainKeyboard));
 });
 
+bot.command("overall", async (context) => {
+  await sendOverallStats(context.chat.id, async (message) => context.reply(message, mainKeyboard));
+});
+
 bot.hears(statsButtonText, async (context) => {
   await sendStats(context.chat.id, async (message) => context.reply(message, mainKeyboard));
+});
+
+bot.hears(overallStatsButtonText, async (context) => {
+  await sendOverallStats(context.chat.id, async (message) => context.reply(message, mainKeyboard));
 });
 
 bot.action(/^answer:([^:]+):(-?\d+)$/, async (context) => {
@@ -351,6 +396,10 @@ const launch = async (): Promise<void> => {
     {
       command: "stats",
       description: "Show wake-up statistics"
+    },
+    {
+      command: "overall",
+      description: "Show overall users statistics"
     },
     {
       command: "stop",

@@ -63,6 +63,19 @@ export interface WakeStats {
   recentWakeDays: WakeDayRecord[];
 }
 
+export interface UserOverallStats {
+  chatId: number;
+  displayName: string;
+  successDays: number;
+  missedDays: number;
+  recentDays: StreakDay[];
+}
+
+export interface OverallWakeStats {
+  totalUsers: number;
+  users: UserOverallStats[];
+}
+
 interface SchedulerState {
   _id: string;
   lastDispatchDate?: string;
@@ -97,6 +110,30 @@ const shiftDateKey = (dateKey: string, deltaDays: number): string => {
 
 const maxDateKey = (left: string, right: string): string => {
   return left > right ? left : right;
+};
+
+const minDateKey = (left: string, right: string): string => {
+  return left < right ? left : right;
+};
+
+const getDaysDiffInclusive = (startDateKey: string, endDateKey: string): number => {
+  const startDate = parseDateKey(startDateKey);
+  const endDate = parseDateKey(endDateKey);
+  const diffMs = endDate.getTime() - startDate.getTime();
+
+  return Math.floor(diffMs / (24 * 60 * 60 * 1000)) + 1;
+};
+
+const getChatDisplayName = (chat: ChatProfile & { chatId: number }): string => {
+  if (chat.username) {
+    return `@${chat.username}`;
+  }
+
+  if (chat.firstName) {
+    return chat.firstName;
+  }
+
+  return `Chat ${chat.chatId}`;
 };
 
 const pruneStaleChallenges = (challenges: PendingChallenge[], now: Date): PendingChallenge[] => {
@@ -412,6 +449,94 @@ export class MongoStorage {
       currentStreak,
       streakDays,
       recentWakeDays: wakeDays.slice(0, recentLimit)
+    };
+  }
+
+  public async getOverallWakeStats(recentWindowDays = 7): Promise<OverallWakeStats> {
+    const todayKey = getDateKey(new Date());
+    const yesterdayKey = shiftDateKey(todayKey, -1);
+    const earliestWindowDate = shiftDateKey(todayKey, -(recentWindowDays - 1));
+    const chats = await this.chats
+      .find({}, { projection: { chatId: 1, firstName: 1, username: 1, registeredAt: 1 } })
+      .sort({ registeredAt: 1 })
+      .toArray();
+
+    if (chats.length === 0) {
+      return {
+        totalUsers: 0,
+        users: []
+      };
+    }
+
+    const wakeDays = await this.wakeDays
+      .find(
+        {
+          chatId: { $in: chats.map((chat) => chat.chatId) },
+          wokeUpAt: { $exists: true }
+        },
+        { projection: { chatId: 1, wakeDate: 1 } }
+      )
+      .sort({ wakeDate: -1 })
+      .toArray();
+    const wakeDaysByChatId = new Map<number, string[]>();
+
+    for (const wakeDay of wakeDays) {
+      const dates = wakeDaysByChatId.get(wakeDay.chatId) ?? [];
+
+      dates.push(wakeDay.wakeDate);
+      wakeDaysByChatId.set(wakeDay.chatId, dates);
+    }
+
+    const users = chats.map((chat) => {
+      const wakeDates = wakeDaysByChatId.get(chat.chatId) ?? [];
+      const wakeDateSet = new Set(wakeDates);
+      const successDays = wakeDates.length;
+      const registrationDate = getDateKey(chat.registeredAt);
+      const hasTodaySuccess = wakeDates.includes(todayKey);
+      const endDate = hasTodaySuccess ? todayKey : yesterdayKey;
+      const trackedEndDate = minDateKey(endDate, todayKey);
+      const recentStartDate = maxDateKey(earliestWindowDate, registrationDate);
+      const trackedDays =
+        registrationDate > trackedEndDate ? 0 : getDaysDiffInclusive(registrationDate, trackedEndDate);
+      const recentDays: StreakDay[] = [];
+
+      if (recentStartDate <= trackedEndDate) {
+        let cursorDate = recentStartDate;
+
+        while (cursorDate <= trackedEndDate) {
+          recentDays.push({
+            date: cursorDate,
+            status: wakeDateSet.has(cursorDate) ? "success" : "missed"
+          });
+
+          cursorDate = shiftDateKey(cursorDate, 1);
+        }
+      }
+
+      return {
+        chatId: chat.chatId,
+        displayName: getChatDisplayName(chat),
+        successDays,
+        missedDays: Math.max(trackedDays - successDays, 0),
+        recentDays
+      };
+    });
+
+    users.sort((left, right) => {
+      if (right.successDays !== left.successDays) {
+        return right.successDays - left.successDays;
+      }
+
+      if (left.missedDays !== right.missedDays) {
+        return left.missedDays - right.missedDays;
+      }
+
+      return left.displayName.localeCompare(right.displayName, "en");
+    });
+
+    return {
+      totalUsers: users.length,
+      users
     };
   }
 }
