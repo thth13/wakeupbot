@@ -58,11 +58,23 @@ const formatMinutesAsTime = (totalMinutes: number): string => {
   return `${hours}:${minutes}`;
 };
 
+const chunk = <T>(items: T[], size: number): T[][] => {
+  const result: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+
+  return result;
+};
+
 const formatStatsMessage = (stats: WakeStats): string => {
+  const streakSquares = stats.streakDays.map((day) => (day.status === "success" ? "🟩" : "🟥"));
   const lines = [
     "Your wake-up stats.",
     `Wake days: ${stats.totalWakeDays}`,
     `Fully confirmed days: ${stats.fullyConfirmedDays}`,
+    `Current streak: ${stats.currentStreak}`,
     `Average wake-up time: ${
       stats.averageWakeUpMinutes !== undefined
         ? formatMinutesAsTime(stats.averageWakeUpMinutes)
@@ -71,6 +83,14 @@ const formatStatsMessage = (stats: WakeStats): string => {
     `First recorded day: ${stats.firstWakeDate ?? "not enough data"}`,
     `Last recorded day: ${stats.lastWakeDate ?? "not enough data"}`
   ];
+
+  if (stats.streakDays.length > 0) {
+    lines.push("Last 21 days: old to new");
+
+    for (const row of chunk(streakSquares, 7)) {
+      lines.push(row.join(""));
+    }
+  }
 
   if (stats.recentWakeDays.length > 0) {
     lines.push("Recent days:");

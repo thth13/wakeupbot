@@ -32,7 +32,7 @@ Telegram bot on TypeScript for early wake-up checks.
 
 - The bot shows a `My stats` button after `/start`.
 - Statistics are built from `wake_days` documents in MongoDB.
-- The stats response includes total recorded wake days, fully confirmed days, average wake-up time, and the latest recorded days.
+- The stats response includes total recorded wake days, fully confirmed days, current streak, a green/red square history for the last 21 days, average wake-up time, and the latest recorded days.
 
 ## Scripts
 

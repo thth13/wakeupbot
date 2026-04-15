@@ -47,12 +47,19 @@ export interface WakeDayRecord extends ChatProfile {
   updatedAt: Date;
 }
 
+export interface StreakDay {
+  date: string;
+  status: "success" | "missed";
+}
+
 export interface WakeStats {
   totalWakeDays: number;
   fullyConfirmedDays: number;
   firstWakeDate?: string;
   lastWakeDate?: string;
   averageWakeUpMinutes?: number;
+  currentStreak: number;
+  streakDays: StreakDay[];
   recentWakeDays: WakeDayRecord[];
 }
 
@@ -70,6 +77,26 @@ const getDateKey = (date: Date): string => {
   const day = String(date.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
+};
+
+const parseDateKey = (dateKey: string): Date => {
+  const [yearRaw, monthRaw, dayRaw] = dateKey.split("-");
+  const year = Number.parseInt(yearRaw, 10);
+  const month = Number.parseInt(monthRaw, 10);
+  const day = Number.parseInt(dayRaw, 10);
+
+  return new Date(year, month - 1, day);
+};
+
+const shiftDateKey = (dateKey: string, deltaDays: number): string => {
+  const date = parseDateKey(dateKey);
+  date.setDate(date.getDate() + deltaDays);
+
+  return getDateKey(date);
+};
+
+const maxDateKey = (left: string, right: string): string => {
+  return left > right ? left : right;
 };
 
 const pruneStaleChallenges = (challenges: PendingChallenge[], now: Date): PendingChallenge[] => {
@@ -320,11 +347,45 @@ export class MongoStorage {
     );
   }
 
-  public async getWakeStats(chatId: number, recentLimit = 7): Promise<WakeStats> {
+  public async getWakeStats(chatId: number, recentLimit = 7, streakWindowDays = 21): Promise<WakeStats> {
+    const chat = await this.chats.findOne({ _id: String(chatId) }, { projection: { registeredAt: 1 } });
     const wakeDays = await this.wakeDays
       .find({ chatId, wokeUpAt: { $exists: true } })
       .sort({ wakeDate: -1 })
       .toArray();
+    const wakeDateSet = new Set(wakeDays.map((wakeDay) => wakeDay.wakeDate));
+    const todayKey = getDateKey(new Date());
+    const yesterdayKey = shiftDateKey(todayKey, -1);
+    const earliestWindowDate = shiftDateKey(todayKey, -(streakWindowDays - 1));
+    const registrationDate = chat?.registeredAt ? getDateKey(chat.registeredAt) : todayKey;
+    const streakStartDate = maxDateKey(earliestWindowDate, registrationDate);
+    const streakAnchor = wakeDateSet.has(todayKey)
+      ? todayKey
+      : wakeDateSet.has(yesterdayKey)
+        ? yesterdayKey
+        : undefined;
+    let currentStreak = 0;
+
+    if (streakAnchor) {
+      let cursorDate = streakAnchor;
+
+      while (wakeDateSet.has(cursorDate)) {
+        currentStreak += 1;
+        cursorDate = shiftDateKey(cursorDate, -1);
+      }
+    }
+
+    const streakDays = [];
+    let streakCursorDate = streakStartDate;
+
+    while (streakCursorDate <= todayKey) {
+      streakDays.push({
+        date: streakCursorDate,
+        status: wakeDateSet.has(streakCursorDate) ? "success" : "missed"
+      });
+
+      streakCursorDate = shiftDateKey(streakCursorDate, 1);
+    }
 
     const fullyConfirmedDays = wakeDays.filter((wakeDay) => {
       const kinds = new Set(wakeDay.wakeEvents.map((event) => event.kind));
@@ -348,6 +409,8 @@ export class MongoStorage {
       firstWakeDate: wakeDays.at(-1)?.wakeDate,
       lastWakeDate: wakeDays[0]?.wakeDate,
       averageWakeUpMinutes: averageWakeUpMinutes,
+      currentStreak,
+      streakDays,
       recentWakeDays: wakeDays.slice(0, recentLimit)
     };
   }
