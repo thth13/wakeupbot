@@ -43,6 +43,7 @@ if (!mongoUri) {
 const bot = new Telegraf(token);
 const storage = new MongoStorage(mongoUri, mongoDbName);
 const mainKeyboard = Markup.keyboard([[statsButtonText, overallStatsButtonText]]).resize();
+let schedulerHandle: NodeJS.Timeout | undefined;
 
 const getDateKey = (date: Date): string => {
   const year = date.getFullYear();
@@ -253,7 +254,7 @@ const runSchedulerTick = async (): Promise<void> => {
 
 const startScheduler = (): void => {
   void runSchedulerTick();
-  setInterval(() => {
+  schedulerHandle = setInterval(() => {
     void runSchedulerTick();
   }, schedulerIntervalMs);
 };
@@ -416,6 +417,11 @@ const launch = async (): Promise<void> => {
 void launch();
 
 const shutdown = async (signal: "SIGINT" | "SIGTERM"): Promise<void> => {
+  if (schedulerHandle) {
+    clearInterval(schedulerHandle);
+    schedulerHandle = undefined;
+  }
+
   bot.stop(signal);
   await storage.close();
 };

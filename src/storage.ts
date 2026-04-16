@@ -187,6 +187,8 @@ export class MongoStorage {
   private readonly chats: Collection<ChatState>;
   private readonly schedulerState: Collection<SchedulerState>;
   private readonly wakeDays: Collection<WakeDayRecord>;
+  private connectPromise?: Promise<void>;
+  private isClosed = false;
 
   public constructor(uri: string, dbName: string) {
     this.client = new MongoClient(uri);
@@ -196,21 +198,42 @@ export class MongoStorage {
     this.wakeDays = this.db.collection<WakeDayRecord>("wake_days");
   }
 
-  public async connect(): Promise<void> {
-    await this.client.connect();
+  private async ensureConnected(): Promise<void> {
+    await this.connect();
+  }
 
-    await Promise.all([
-      this.chats.createIndex({ chatId: 1 }, { unique: true }),
-      this.wakeDays.createIndex({ chatId: 1, wakeDate: -1 }),
-      this.wakeDays.createIndex({ userId: 1, wakeDate: -1 }, { sparse: true })
-    ]);
+  public async connect(): Promise<void> {
+    if (this.isClosed) {
+      throw new Error("MongoStorage is closed");
+    }
+
+    if (!this.connectPromise) {
+      this.connectPromise = (async () => {
+        await this.client.connect();
+
+        await Promise.all([
+          this.chats.createIndex({ chatId: 1 }, { unique: true }),
+          this.wakeDays.createIndex({ chatId: 1, wakeDate: -1 }),
+          this.wakeDays.createIndex({ userId: 1, wakeDate: -1 }, { sparse: true })
+        ]);
+      })();
+
+      this.connectPromise.catch(() => {
+        this.connectPromise = undefined;
+      });
+    }
+
+    await this.connectPromise;
   }
 
   public async close(): Promise<void> {
+    this.isClosed = true;
     await this.client.close();
   }
 
   public async upsertChat(chatId: number, profile: ChatProfile): Promise<ChatState> {
+    await this.ensureConnected();
+
     const now = new Date();
     const chatKey = String(chatId);
     const existingChat = await this.chats.findOne({ _id: chatKey });
@@ -233,14 +256,20 @@ export class MongoStorage {
   }
 
   public async getChat(chatId: number): Promise<ChatState | null> {
+    await this.ensureConnected();
+
     return this.chats.findOne({ _id: String(chatId) });
   }
 
   public async listChats(): Promise<ChatState[]> {
+    await this.ensureConnected();
+
     return this.chats.find({}).toArray();
   }
 
   public async removeChat(chatId: number): Promise<boolean> {
+    await this.ensureConnected();
+
     const result = await this.chats.deleteOne({ _id: String(chatId) });
 
     return result.deletedCount === 1;
@@ -253,6 +282,8 @@ export class MongoStorage {
     challengeId: string,
     sentAt: Date
   ): Promise<void> {
+    await this.ensureConnected();
+
     const chatKey = String(chatId);
     const existingChat = await this.chats.findOne({ _id: chatKey });
 
@@ -286,6 +317,8 @@ export class MongoStorage {
     challengeId: string,
     now: Date
   ): Promise<PendingChallenge | undefined> {
+    await this.ensureConnected();
+
     const chatKey = String(chatId);
     const existingChat = await this.chats.findOne({ _id: chatKey });
 
@@ -311,6 +344,8 @@ export class MongoStorage {
   }
 
   public async clearChallenge(chatId: number, challengeId: string, clearedAt: Date): Promise<void> {
+    await this.ensureConnected();
+
     const chatKey = String(chatId);
     const existingChat = await this.chats.findOne({ _id: chatKey });
 
@@ -330,12 +365,16 @@ export class MongoStorage {
   }
 
   public async wasSlotDispatched(slotKey: string, dateKey: string): Promise<boolean> {
+    await this.ensureConnected();
+
     const state = await this.schedulerState.findOne({ _id: slotKey });
 
     return state?.lastDispatchDate === dateKey;
   }
 
   public async markSlotDispatched(slotKey: string, dateKey: string, updatedAt: Date): Promise<void> {
+    await this.ensureConnected();
+
     await this.schedulerState.updateOne(
       { _id: slotKey },
       {
@@ -353,6 +392,8 @@ export class MongoStorage {
     challenge: PendingChallenge,
     solvedAt: Date
   ): Promise<void> {
+    await this.ensureConnected();
+
     const wakeDate = getDateKey(solvedAt);
     const dayId = `${chat.chatId}:${wakeDate}`;
     const existingDay = await this.wakeDays.findOne({ _id: dayId }, { projection: { wokeUpAt: 1 } });
@@ -385,6 +426,8 @@ export class MongoStorage {
   }
 
   public async getWakeStats(chatId: number, recentLimit = 7, streakWindowDays = 21): Promise<WakeStats> {
+    await this.ensureConnected();
+
     const chat = await this.chats.findOne({ _id: String(chatId) }, { projection: { registeredAt: 1 } });
     const wakeDays = await this.wakeDays
       .find({ chatId, wokeUpAt: { $exists: true } })
@@ -412,7 +455,7 @@ export class MongoStorage {
       }
     }
 
-    const streakDays = [];
+    const streakDays: StreakDay[] = [];
     let streakCursorDate = streakStartDate;
 
     while (streakCursorDate <= todayKey) {
@@ -453,6 +496,8 @@ export class MongoStorage {
   }
 
   public async getOverallWakeStats(recentWindowDays = 7): Promise<OverallWakeStats> {
+    await this.ensureConnected();
+
     const todayKey = getDateKey(new Date());
     const yesterdayKey = shiftDateKey(todayKey, -1);
     const earliestWindowDate = shiftDateKey(todayKey, -(recentWindowDays - 1));
