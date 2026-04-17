@@ -17,8 +17,8 @@ export const BOT_COMMANDS: BotCommandDefinition[] = [
   },
   {
     command: 'stats',
-    description: 'Show today leaderboard',
-    helpText: '/stats — статистика за сегодня',
+    description: 'Show overall leaderboard',
+    helpText: '/stats — общий рейтинг',
   },
   {
     command: 'mystats',

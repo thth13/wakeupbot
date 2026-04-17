@@ -40,6 +40,12 @@ export function getLevelForDays(days: number): LevelDefinition {
   );
 }
 
+export function getNextLevelForDays(days: number): LevelDefinition | null {
+  const normalizedDays = Math.max(0, days);
+
+  return LEVELS.find((level) => level.minDays > normalizedDays) ?? null;
+}
+
 export function formatLevelLabel(level: LevelDefinition): string {
   return `${level.icon} ${level.title}`;
 }

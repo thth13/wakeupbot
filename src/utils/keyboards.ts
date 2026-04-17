@@ -1,7 +1,7 @@
 import { Markup } from 'telegraf';
 
 export const mainMenuKeyboard = Markup.keyboard([
-  [Markup.button.text('📊 Рейтинг сегодня'), Markup.button.text('👤 Моя статистика')],
+  [Markup.button.text('📊 Общий рейтинг'), Markup.button.text('👤 Моя статистика')],
 ]).resize();
 
 export const debugMenuKeyboard = Markup.keyboard([
@@ -12,7 +12,7 @@ export const debugMenuKeyboard = Markup.keyboard([
 
 // Maps button text to the command it should trigger
 export const MENU_BUTTON_COMMANDS: Record<string, string> = {
-  '📊 Рейтинг сегодня': '/stats',
+  '📊 Общий рейтинг': '/stats',
   '👤 Моя статистика': '/mystats',
 };
 
