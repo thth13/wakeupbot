@@ -7,13 +7,14 @@ import { displayTime, formatHumanDate, todayInAppTimezone } from '../utils/time'
 export function registerStatsHandlers(bot: Telegraf) {
   // /stats — overall leaderboard
   bot.command('stats', async (ctx) => {
-    const users = await User.find({ levelDays: { $gt: 0 } })
+    // Показываем все зарегистрированные пользователи, даже если у них 0 подъёмов
+    const users = await User.find()
       .select('telegramId firstName levelDays')
       .sort({ levelDays: -1, firstName: 1 })
       .lean();
 
     if (users.length === 0) {
-      await ctx.reply('📊 Пока нет подтверждённых подъёмов. Будь первым в общем рейтинге!');
+      await ctx.reply('📊 Пока нет зарегистрированных пользователей. Будь первым в общем рейтинге!');
       return;
     }
 
@@ -40,7 +41,7 @@ export function registerStatsHandlers(bot: Telegraf) {
 
     const lines = topUsers.map((entry, index) => {
       const levelTitle = entry.level.title;
-      return `${index + 1}. ${entry.level.icon} ${entry.firstName} — ${levelTitle} | ${entry.levelDays} дн. | стрик ${entry.streak} дн.`;
+      return `${index + 1}. ${entry.level.icon} ${entry.firstName} — ${levelTitle} | ${entry.levelDays} дн. | подряд ${entry.streak} дн.`;
     });
 
     const currentUserIndex = rankedUsers.findIndex((entry) => entry.telegramId === ctx.from.id);
