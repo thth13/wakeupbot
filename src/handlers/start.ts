@@ -1,8 +1,10 @@
 import { Context, Telegraf } from 'telegraf';
 import { User } from '../models/User';
 import {
+  appendUserInviteCode,
   createUniqueInviteCode,
   ensureUserInviteCode,
+  getUserInviteCodes,
   BOOTSTRAP_INVITE_CODE,
   normalizeInviteCode,
 } from '../utils/inviteCodes';
@@ -14,6 +16,7 @@ import { mainMenuKeyboard, MENU_BUTTON_COMMANDS } from '../utils/keyboards';
 const awaitingInviteCode = new Set<number>();
 const awaitingWakeTime = new Set<number>();
 const pendingInviterIds = new Map<number, number | null>();
+const pendingInviteCodes = new Map<number, string | null>();
 
 async function notifyUsersAboutNewMember(bot: Telegraf, newUserTelegramId: number, newUserFirstName: string) {
   const recipients = await User.find({ telegramId: { $ne: newUserTelegramId } }).select('telegramId').lean();
@@ -22,12 +25,11 @@ async function notifyUsersAboutNewMember(bot: Telegraf, newUserTelegramId: numbe
     return;
   }
 
-  const message = `🎉 К нам присоединился новый участник — *${newUserFirstName}*!`;
+  const message = `🎉 К нам присоединился новый участник — ${newUserFirstName}!`;
 
   await Promise.allSettled(
     recipients.map(({ telegramId }) =>
       bot.telegram.sendMessage(telegramId, message, {
-        parse_mode: 'Markdown',
       })
     )
   );
@@ -51,10 +53,19 @@ async function handleInviteCodeStep(ctx: Context & { message: { text: string; en
       return;
     }
   } else {
-    const inviter = await User.findOne({ inviteCode: submittedCode }).select('telegramId');
+    const inviter = await User.findOne({
+      $or: [{ inviteCode: submittedCode }, { inviteCodes: submittedCode }],
+    }).select('telegramId');
 
     if (!inviter) {
       await ctx.reply('❌ Неверный код приглашения. Проверь код и попробуй ещё раз.');
+      return;
+    }
+
+    const alreadyUsed = await User.exists({ invitedWithCode: submittedCode });
+
+    if (alreadyUsed) {
+      await ctx.reply('❌ Этот инвайт-код уже использован. Попроси новый код приглашения.');
       return;
     }
 
@@ -64,6 +75,7 @@ async function handleInviteCodeStep(ctx: Context & { message: { text: string; en
   awaitingInviteCode.delete(id);
   awaitingWakeTime.add(id);
   pendingInviterIds.set(id, inviterTelegramId);
+  pendingInviteCodes.set(id, isBootstrapAllowed ? null : submittedCode);
 
   const startingLevel = getLevelForDays(0);
 
@@ -89,12 +101,13 @@ export function registerStartHandler(bot: Telegraf) {
     const existing = await User.findOne({ telegramId: id });
 
     if (existing) {
-      const inviteCode = await ensureUserInviteCode(existing);
+      const inviteCodes = await getUserInviteCodes(existing);
+      const inviteCodesText = inviteCodes.map((inviteCode, index) => `${index + 1}. *${inviteCode}*`).join('\n');
 
       await ctx.reply(
         `👋 Ты уже зарегистрирован!\n\n` +
           `⏰ Твоё время подъёма: *${existing.targetWakeTime}*\n` +
-          `🗝 Твой инвайт-код: *${inviteCode}*`,
+          `🗝 Твои инвайт-коды:\n${inviteCodesText}`,
         { parse_mode: 'Markdown', ...mainMenuKeyboard }
       );
       return;
@@ -103,9 +116,34 @@ export function registerStartHandler(bot: Telegraf) {
     awaitingInviteCode.add(id);
     awaitingWakeTime.delete(id);
     pendingInviterIds.delete(id);
+    pendingInviteCodes.delete(id);
 
     await ctx.reply(
       `🔐 Введи код приглашения, чтобы вступить в челлендж ранних подъёмов.`,
+      { parse_mode: 'Markdown' }
+    );
+  });
+
+  bot.command('invite', async (ctx) => {
+    if (!ctx.from) {
+      return;
+    }
+
+    const user = await User.findOne({ telegramId: ctx.from.id });
+
+    if (!user) {
+      await ctx.reply('Сначала зарегистрируйся через /start');
+      return;
+    }
+
+    const inviteCode = await appendUserInviteCode(user);
+    const inviteCodes = await getUserInviteCodes(user);
+
+    await ctx.reply(
+      `🗝 Новый инвайт-код готов: *${inviteCode}*\n\n` +
+        `👤 Ограничение: один код можно использовать только для одного приглашённого.\n` +
+        `📦 Активных кодов сейчас: *${inviteCodes.length}*\n` +
+        `♻️ Если нужен следующий инвайт, снова используй /invite.`,
       { parse_mode: 'Markdown' }
     );
   });
@@ -120,6 +158,7 @@ export function registerStartHandler(bot: Telegraf) {
     awaitingInviteCode.delete(id);
     awaitingWakeTime.add(id);
     pendingInviterIds.delete(id);
+    pendingInviteCodes.delete(id);
 
     const startingLevel = getLevelForDays(0);
 
@@ -177,16 +216,21 @@ export function registerStartHandler(bot: Telegraf) {
 
     const firstName = ctx.from.first_name?.trim() || 'Новый участник';
 
+    const primaryInviteCode = await createUniqueInviteCode();
+
     await User.create({
       telegramId: id,
       username: ctx.from.username,
       firstName,
-      inviteCode: await createUniqueInviteCode(),
+      inviteCode: primaryInviteCode,
+      inviteCodes: [primaryInviteCode],
       invitedByTelegramId: pendingInviterIds.get(id) ?? undefined,
+      invitedWithCode: pendingInviteCodes.get(id) ?? undefined,
       targetWakeTime: wakeTime,
     });
 
     pendingInviterIds.delete(id);
+    pendingInviteCodes.delete(id);
 
     await ctx.reply(
       `✅ Готово. Каждый день в *${wakeTime}* я буду присылать тебе задачку для подтверждения подъёма.\n\n` +

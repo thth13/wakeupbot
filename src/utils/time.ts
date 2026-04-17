@@ -60,3 +60,12 @@ export function formatHumanDate(dateKey: string): string {
     month: 'long',
   }).format(date);
 }
+
+export function formatHumanDateTime(date: Date): string {
+  return new Intl.DateTimeFormat('ru-RU', {
+    timeZone: APP_TIMEZONE,
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
+}

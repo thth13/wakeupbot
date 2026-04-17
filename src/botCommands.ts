@@ -16,6 +16,11 @@ export const BOT_COMMANDS: BotCommandDefinition[] = [
     helpText: '/time — изменить время подъёма',
   },
   {
+    command: 'invite',
+    description: 'Generate a new single-use invite code',
+    helpText: '/invite — сгенерировать новый инвайт-код',
+  },
+  {
     command: 'stats',
     description: 'Show overall leaderboard',
     helpText: '/stats — общий рейтинг',

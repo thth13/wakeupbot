@@ -2,7 +2,7 @@ import { Telegraf } from 'telegraf';
 import { WakeUpEntry } from '../models/WakeUpEntry';
 import { User } from '../models/User';
 import { formatLevelLabel, getLevelForDays, getNextLevelForDays } from '../utils/levels';
-import { displayTime, formatHumanDate, todayInAppTimezone } from '../utils/time';
+import { displayTime, formatHumanDate, formatHumanDateTime, todayInAppTimezone } from '../utils/time';
 
 export function registerStatsHandlers(bot: Telegraf) {
   // /stats — overall leaderboard
@@ -53,10 +53,6 @@ export function registerStatsHandlers(bot: Telegraf) {
     if (currentUser) {
       footer += `\n\n📈 *ТЫ НА ${currentUserIndex + 1} МЕСТЕ*`;
 
-      if (userAhead) {
-        footer += `\n\nТебя обгоняет:\n${userAhead.level.icon} ${userAhead.firstName} — ${userAhead.levelDays} дн.`;
-      }
-
       const nextLevel = getNextLevelForDays(currentUser.levelDays ?? 0);
 
       if (nextLevel) {
@@ -67,12 +63,9 @@ export function registerStatsHandlers(bot: Telegraf) {
       }
     }
 
-    await ctx.reply(
-      `🏆 *РЕЙТИНГ РАННИХ ПОДЪЁМОВ*\n\n${lines.join('\n')}${footer}`,
-      {
-        parse_mode: 'Markdown',
-      }
-    );
+    await ctx.reply(`🏆 *РЕЙТИНГ РАННИХ ПОДЪЁМОВ*\n\n${lines.join('\n')}${footer}`, {
+      parse_mode: 'Markdown',
+    });
   });
 
   // /mystats — personal streak & history
@@ -97,11 +90,12 @@ export function registerStatsHandlers(bot: Telegraf) {
     text += `🏅 Уровень: *${formatLevelLabel(level)}*\n`;
     text += `🔥 Текущий стрик: *${streak} дн.*\n`;
     text += `✅ Всего подъёмов: *${total}*\n`;
+    text += `📅 Стартовал: *${formatHumanDateTime(user.createdAt)}*\n`;
     text += `⏰ Цель: *${user.targetWakeTime}*\n\n`;
 
     if (entries.length > 0) {
       text += `*Последние 7 подъёмов:*\n`;
-      text += entries.map((e) => `• ${formatHumanDate(e.date)} - ${displayTime(e.wakeUpTime)}`).join('\n');
+      text += entries.map((entry) => `• ${formatHumanDate(entry.date)} - ${displayTime(entry.wakeUpTime)}`).join('\n');
     }
 
     await ctx.reply(text, { parse_mode: 'Markdown' });
@@ -120,12 +114,11 @@ async function calculateStreak(telegramId: number): Promise<number> {
   const todayKey = todayInAppTimezone(today);
   const todayStart = new Date(`${todayKey}T00:00:00Z`);
 
-  for (let i = 0; i < entries.length; i++) {
-    const entryDate = new Date(entries[i].date + 'T00:00:00Z');
+  for (let index = 0; index < entries.length; index++) {
+    const entryDate = new Date(entries[index].date + 'T00:00:00Z');
     const diffDays = Math.round((todayStart.getTime() - entryDate.getTime()) / 86400000);
 
-    if (diffDays === i || diffDays === i + 1) {
-      // allow yesterday to still count
+    if (diffDays === index || diffDays === index + 1) {
       streak++;
     } else {
       break;
