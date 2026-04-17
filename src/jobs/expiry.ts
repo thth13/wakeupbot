@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { Telegraf } from 'telegraf';
 import { PendingChallenge } from '../models/PendingChallenge';
+import { applyLevelProgressChange, formatLevelLabel } from '../utils/levels';
 
 export function startExpiryJob(bot: Telegraf) {
   // Check every minute for expired challenges
@@ -12,12 +13,17 @@ export function startExpiryJob(bot: Telegraf) {
 
     for (const challenge of expired) {
       try {
+        const progress = await applyLevelProgressChange(challenge.telegramId, -1);
+        const progressText = progress
+          ? `\n\n📉 Прогресс: -1 день\n🏅 Уровень: ${formatLevelLabel(progress.currentLevel)}\n📊 Дней прогресса: ${progress.currentDays}`
+          : '';
+
         if (challenge.messageId) {
           await bot.telegram.editMessageText(
             challenge.chatId,
             challenge.messageId,
             undefined,
-            '⏰ Время вышло! Задачка не решена. До завтра 😴'
+            `⏰ Время вышло! Задачка не решена. До завтра 😴${progressText}`
           );
         }
       } catch {

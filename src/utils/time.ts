@@ -49,3 +49,14 @@ export function parseWakeTime(input: string): string | null {
 export function displayTime(date: Date): string {
   return formatTimeInAppTimezone(date);
 }
+
+export function formatHumanDate(dateKey: string): string {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  return new Intl.DateTimeFormat('ru-RU', {
+    timeZone: APP_TIMEZONE,
+    day: 'numeric',
+    month: 'long',
+  }).format(date);
+}

@@ -1,7 +1,8 @@
 import { Telegraf } from 'telegraf';
 import { WakeUpEntry } from '../models/WakeUpEntry';
 import { User } from '../models/User';
-import { displayTime, todayInAppTimezone } from '../utils/time';
+import { formatLevelLabel, getLevelForDays } from '../utils/levels';
+import { displayTime, formatHumanDate, todayInAppTimezone } from '../utils/time';
 
 export function registerStatsHandlers(bot: Telegraf) {
   // /stats — today's leaderboard
@@ -44,15 +45,17 @@ export function registerStatsHandlers(bot: Telegraf) {
 
     const streak = await calculateStreak(id);
     const total = await WakeUpEntry.countDocuments({ telegramId: id, verified: true });
+    const level = getLevelForDays(user.levelDays ?? 0);
 
     let text = `📈 *Твоя статистика*\n\n`;
+    text += `🏅 Уровень: *${formatLevelLabel(level)}*\n`;
     text += `🔥 Текущий стрик: *${streak} дн.*\n`;
     text += `✅ Всего подъёмов: *${total}*\n`;
     text += `⏰ Цель: *${user.targetWakeTime}*\n\n`;
 
     if (entries.length > 0) {
       text += `*Последние 7 подъёмов:*\n`;
-      text += entries.map((e) => `• ${e.date} — ${displayTime(e.wakeUpTime)}`).join('\n');
+      text += entries.map((e) => `• ${formatHumanDate(e.date)} - ${displayTime(e.wakeUpTime)}`).join('\n');
     }
 
     await ctx.reply(text, { parse_mode: 'Markdown' });

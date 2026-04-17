@@ -2,6 +2,7 @@ import { Telegraf } from 'telegraf';
 import { PendingChallenge } from '../models/PendingChallenge';
 import { WakeUpEntry } from '../models/WakeUpEntry';
 import { User } from '../models/User';
+import { applyLevelProgressChange, formatLevelLabel } from '../utils/levels';
 import { displayTime, todayInAppTimezone } from '../utils/time';
 import { sendChallenge } from '../utils/challenge';
 
@@ -61,13 +62,27 @@ export function registerCallbackHandler(bot: Telegraf) {
       { upsert: true, new: true }
     );
 
+    const progress = await applyLevelProgressChange(telegramId, 1);
+
     await ctx.editMessageText('✅ Задачка решена!');
 
     await ctx.telegram.sendMessage(
       telegramId,
-      `🌅 *Доброе утро, ${user?.firstName ?? ctx.from.first_name}!*\n\nПодъём засчитан в *${displayTime(now)}* 🎉\nОтличное начало дня!`,
+      `🌅 *Доброе утро, ${user?.firstName ?? ctx.from.first_name}!*\n\nПодъём засчитан в *${displayTime(now)}* 🎉${
+        progress
+          ? `\n🏅 Текущий уровень: *${formatLevelLabel(progress.currentLevel)}*\n📊 Дней прогресса: *${progress.currentDays}*`
+          : ''
+      }\nОтличное начало дня!`,
       { parse_mode: 'Markdown' }
     );
+
+    if (progress?.leveledUp) {
+      await ctx.telegram.sendMessage(
+        telegramId,
+        `🎉 *Новый уровень!*\n\nТеперь твой ранг — *${formatLevelLabel(progress.currentLevel)}*\nПродолжай в том же темпе!`,
+        { parse_mode: 'Markdown' }
+      );
+    }
 
     await ctx.answerCbQuery('🌅 Отличный подъём!');
   });

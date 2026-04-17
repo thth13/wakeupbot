@@ -6,6 +6,7 @@ export interface IUser extends Document {
   firstName: string;
   targetWakeTime: string; // "HH:MM" in configured app timezone
   isActive: boolean;
+  levelDays: number;
   preWakeReminderDate?: string; // "YYYY-MM-DD" last date pre-wake reminder was sent
   challengeDispatchLockUntil?: Date;
   createdAt: Date;
@@ -18,6 +19,7 @@ const UserSchema = new Schema<IUser>(
     firstName: { type: String, required: true },
     targetWakeTime: { type: String, required: true }, // e.g. "05:30"
     isActive: { type: Boolean, default: true },
+    levelDays: { type: Number, default: 0 },
     preWakeReminderDate: { type: String },
     challengeDispatchLockUntil: { type: Date },
   },
