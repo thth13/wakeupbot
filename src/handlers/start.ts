@@ -1,4 +1,4 @@
-import { Context } from 'telegraf';
+import { Context, Telegraf } from 'telegraf';
 import { User } from '../models/User';
 import {
   createUniqueInviteCode,
@@ -14,6 +14,24 @@ import { mainMenuKeyboard, MENU_BUTTON_COMMANDS } from '../utils/keyboards';
 const awaitingInviteCode = new Set<number>();
 const awaitingWakeTime = new Set<number>();
 const pendingInviterIds = new Map<number, number | null>();
+
+async function notifyUsersAboutNewMember(bot: Telegraf, newUserTelegramId: number, newUserFirstName: string) {
+  const recipients = await User.find({ telegramId: { $ne: newUserTelegramId } }).select('telegramId').lean();
+
+  if (recipients.length === 0) {
+    return;
+  }
+
+  const message = `🎉 К нам присоединился новый участник — *${newUserFirstName}*!`;
+
+  await Promise.allSettled(
+    recipients.map(({ telegramId }) =>
+      bot.telegram.sendMessage(telegramId, message, {
+        parse_mode: 'Markdown',
+      })
+    )
+  );
+}
 
 async function handleInviteCodeStep(ctx: Context & { message: { text: string; entities?: { type: string }[] } }) {
   if (!ctx.from) {
@@ -61,7 +79,7 @@ async function handleInviteCodeStep(ctx: Context & { message: { text: string; en
   );
 }
 
-export function registerStartHandler(bot: import('telegraf').Telegraf) {
+export function registerStartHandler(bot: Telegraf) {
   bot.start(async (ctx) => {
     if (!ctx.from) {
       return;
@@ -157,10 +175,12 @@ export function registerStartHandler(bot: import('telegraf').Telegraf) {
 
     awaitingWakeTime.delete(id);
 
+    const firstName = ctx.from.first_name?.trim() || 'Новый участник';
+
     await User.create({
       telegramId: id,
       username: ctx.from.username,
-      firstName: ctx.from.first_name,
+      firstName,
       inviteCode: await createUniqueInviteCode(),
       invitedByTelegramId: pendingInviterIds.get(id) ?? undefined,
       targetWakeTime: wakeTime,
@@ -173,6 +193,8 @@ export function registerStartHandler(bot: import('telegraf').Telegraf) {
         `Реши её вовремя, а потом подтверди бодрствование повторной проверкой через 30 минут.`,
       { parse_mode: 'Markdown', ...mainMenuKeyboard }
     );
+
+    await notifyUsersAboutNewMember(bot, id, firstName);
   });
 
   return awaitingWakeTime;
