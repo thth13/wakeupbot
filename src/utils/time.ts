@@ -45,11 +45,7 @@ export function parseWakeTime(input: string): string | null {
   return `${String(hh).padStart(2, '0')}:${m}`;
 }
 
-export function getTimezoneLabel(): string {
-  return APP_TIMEZONE;
-}
-
-// Format Date to human-readable "HH:MM <timezone>"
+// Format Date to human-readable "HH:MM"
 export function displayTime(date: Date): string {
-  return `${formatTimeInAppTimezone(date)} ${getTimezoneLabel()}`;
+  return formatTimeInAppTimezone(date);
 }

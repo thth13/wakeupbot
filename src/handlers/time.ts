@@ -1,6 +1,6 @@
 import { Telegraf } from 'telegraf';
 import { User } from '../models/User';
-import { getTimezoneLabel, parseWakeTime } from '../utils/time';
+import { parseWakeTime } from '../utils/time';
 
 const awaitingTimeChange = new Set<number>();
 
@@ -16,7 +16,7 @@ export function registerTimeHandler(bot: Telegraf, awaitingFromStart: Set<number
 
     awaitingTimeChange.add(id);
     await ctx.reply(
-      `⏰ Текущее время подъёма: *${user.targetWakeTime} ${getTimezoneLabel()}*\n\n` +
+      `⏰ Текущее время подъёма: *${user.targetWakeTime}*\n\n` +
         `Введи новое время в формате *ЧЧ:ММ*:`,
       { parse_mode: 'Markdown' }
     );
@@ -38,6 +38,6 @@ export function registerTimeHandler(bot: Telegraf, awaitingFromStart: Set<number
 
     await User.updateOne({ telegramId: id }, { targetWakeTime: wakeTime });
 
-    await ctx.reply(`✅ Время подъёма изменено на *${wakeTime} ${getTimezoneLabel()}*`, { parse_mode: 'Markdown' });
+    await ctx.reply(`✅ Время подъёма изменено на *${wakeTime}*`, { parse_mode: 'Markdown' });
   });
 }

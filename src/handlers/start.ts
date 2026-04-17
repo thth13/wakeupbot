@@ -1,6 +1,6 @@
 import { Context } from 'telegraf';
 import { User } from '../models/User';
-import { getTimezoneLabel, parseWakeTime } from '../utils/time';
+import { parseWakeTime } from '../utils/time';
 import { mainMenuKeyboard, MENU_BUTTON_COMMANDS } from '../utils/keyboards';
 
 // Conversation state: waiting for wake time
@@ -13,7 +13,7 @@ export function registerStartHandler(bot: import('telegraf').Telegraf) {
 
     if (existing) {
       await ctx.reply(
-        `👋 Ты уже зарегистрирован!\n\n⏰ Твоё время подъёма: *${existing.targetWakeTime} ${getTimezoneLabel()}*`,
+        `👋 Ты уже зарегистрирован!\n\n⏰ Твоё время подъёма: *${existing.targetWakeTime}*`,
         { parse_mode: 'Markdown', ...mainMenuKeyboard }
       );
       return;
@@ -23,7 +23,7 @@ export function registerStartHandler(bot: import('telegraf').Telegraf) {
     await ctx.reply(
       `🌅 Привет, *${ctx.from.first_name}*! Добро пожаловать в челлендж ранних подъёмов!\n\n` +
         `Каждое утро в заданное время я пришлю тебе задачку — реши её, чтобы подтвердить пробуждение.\n\n` +
-        `⏰ В котором часу ты хочешь вставать? Часовой пояс: *${getTimezoneLabel()}*\n` +
+        `⏰ В котором часу ты хочешь вставать?\n` +
         `Введи время в формате *ЧЧ:ММ*, например \`05:30\``,
       { parse_mode: 'Markdown' }
     );
@@ -67,7 +67,7 @@ export function registerStartHandler(bot: import('telegraf').Telegraf) {
     });
 
     await ctx.reply(
-      `✅ Отлично! Каждый день в *${wakeTime} ${getTimezoneLabel()}* я буду присылать тебе задачку.\n\n` +
+      `✅ Отлично! Каждый день в *${wakeTime}* я буду присылать тебе задачку.\n\n` +
         `Реши её в течение 10 минут, чтобы засчитался ранний подъём. Удачи! 💪`,
       { parse_mode: 'Markdown', ...mainMenuKeyboard }
     );

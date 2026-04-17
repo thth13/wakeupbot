@@ -1,7 +1,7 @@
 import { Telegraf } from 'telegraf';
 import { WakeUpEntry } from '../models/WakeUpEntry';
 import { User } from '../models/User';
-import { displayTime, getTimezoneLabel, todayInAppTimezone } from '../utils/time';
+import { displayTime, todayInAppTimezone } from '../utils/time';
 
 export function registerStatsHandlers(bot: Telegraf) {
   // /stats — today's leaderboard
@@ -48,7 +48,7 @@ export function registerStatsHandlers(bot: Telegraf) {
     let text = `📈 *Твоя статистика*\n\n`;
     text += `🔥 Текущий стрик: *${streak} дн.*\n`;
     text += `✅ Всего подъёмов: *${total}*\n`;
-    text += `⏰ Цель: *${user.targetWakeTime} ${getTimezoneLabel()}*\n\n`;
+    text += `⏰ Цель: *${user.targetWakeTime}*\n\n`;
 
     if (entries.length > 0) {
       text += `*Последние 7 подъёмов:*\n`;
