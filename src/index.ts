@@ -74,9 +74,6 @@ async function main() {
   botInstance = bot;
 
   await bot.telegram.deleteMyCommands();
-  await bot.telegram.setMyCommands(
-    BOT_COMMANDS.map(({ command, description }) => ({ command, description }))
-  );
 
   // Register handlers
   const awaitingFromStart = registerStartHandler(bot);
