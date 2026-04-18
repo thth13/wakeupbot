@@ -3,6 +3,7 @@ import { IUser } from '../models/User';
 import { User } from '../models/User';
 import { PendingChallenge } from '../models/PendingChallenge';
 import { generatePuzzle } from './puzzle';
+import { bold, TELEGRAM_HTML } from './telegram';
 
 const ANSWER_WINDOW_MS = parseInt(process.env.ANSWER_WINDOW_MINUTES ?? '10', 10) * 60 * 1000;
 const CHALLENGE_SEND_LOCK_MS = 30 * 1000;
@@ -46,12 +47,12 @@ export async function sendChallenge(bot: Telegraf, user: IUser): Promise<boolean
 
   const msg = await bot.telegram.sendMessage(
     user.telegramId,
-    `🌅 *Доброе утро, ${user.firstName}!*\n\n` +
+    `🌅 ${bold(`Доброе утро, ${user.firstName}!`)}\n\n` +
       `Реши задачку, чтобы подтвердить пробуждение:\n\n` +
-      `➡️ *${puzzle.question}*\n\n` +
+      `➡️ ${bold(puzzle.question)}\n\n` +
       `⏳ У тебя 10 минут!`,
     {
-      parse_mode: 'Markdown',
+      parse_mode: TELEGRAM_HTML,
       ...Markup.inlineKeyboard([buttons]),
     }
   );

@@ -3,6 +3,7 @@ import { WakeUpEntry } from '../models/WakeUpEntry';
 import { User } from '../models/User';
 import { formatLevelLabel, getLevelForDays } from '../utils/levels';
 import { displayTime, formatHumanDate, formatHumanDateTime, resolveTimezone, todayInTimezone } from '../utils/time';
+import { bold, escapeHtml, TELEGRAM_HTML } from '../utils/telegram';
 
 export function registerStatsHandlers(bot: Telegraf) {
   // /stats — overall leaderboard
@@ -46,18 +47,18 @@ export function registerStatsHandlers(bot: Telegraf) {
     const currentUserId = ctx.from.id;
 
     const lines = topUsers.map((entry, index) => {
-      const firstLine = `${index + 1}. ${entry.level.icon} ${entry.firstName} — ${entry.level.title}`;
+      const firstLine = `${index + 1}. ${entry.level.icon} ${escapeHtml(entry.firstName)} — ${escapeHtml(entry.level.title)}`;
       const secondLine = `   ⏰ ${entry.targetWakeTime} | 🔥 ${entry.streak} дн. | 📊 всего: ${entry.total} дн.`;
 
       if (entry.telegramId === currentUserId) {
-        return `*${firstLine}*\n*${secondLine}*`;
+        return `<b>${firstLine}</b>\n<b>${secondLine}</b>`;
       }
 
       return `${firstLine}\n${secondLine}`;
     });
 
-    await ctx.reply(`🏆 *РЕЙТИНГ РАННИХ ПОДЪЁМОВ*\n\n${lines.join('\n')}`, {
-      parse_mode: 'Markdown',
+    await ctx.reply(`🏆 <b>РЕЙТИНГ РАННИХ ПОДЪЁМОВ</b>\n\n${lines.join('\n')}`, {
+      parse_mode: TELEGRAM_HTML,
     });
   });
 
@@ -80,22 +81,22 @@ export function registerStatsHandlers(bot: Telegraf) {
     const level = getLevelForDays(user.levelDays ?? 0);
     const timezone = resolveTimezone(user.timezone);
 
-    let text = `📈 *Твоя статистика*\n\n`;
-    text += `🏅 Уровень: *${formatLevelLabel(level)}*\n`;
-    text += `🔥 Текущий стрик: *${streak} дн.*\n`;
-    text += `✅ Всего подъёмов: *${total}*\n`;
-    text += `📅 Стартовал: *${formatHumanDateTime(user.createdAt, timezone)}*\n`;
-    text += `🌍 Таймзона: *${timezone}*\n`;
-    text += `⏰ Цель: *${user.targetWakeTime}*\n\n`;
+    let text = `📈 <b>Твоя статистика</b>\n\n`;
+    text += `🏅 Уровень: ${bold(formatLevelLabel(level))}\n`;
+    text += `🔥 Текущий стрик: ${bold(`${streak} дн.`)}\n`;
+    text += `✅ Всего подъёмов: ${bold(String(total))}\n`;
+    text += `📅 Стартовал: ${bold(formatHumanDateTime(user.createdAt, timezone))}\n`;
+    text += `🌍 Таймзона: ${bold(timezone)}\n`;
+    text += `⏰ Цель: ${bold(user.targetWakeTime)}\n\n`;
 
     if (entries.length > 0) {
-      text += `*Последние 7 подъёмов:*\n`;
+      text += `<b>Последние 7 подъёмов:</b>\n`;
       text += entries
-        .map((entry) => `• ${formatHumanDate(entry.date, timezone)} - ${displayTime(entry.wakeUpTime, timezone)}`)
+        .map((entry) => `• ${escapeHtml(formatHumanDate(entry.date, timezone))} - ${escapeHtml(displayTime(entry.wakeUpTime, timezone))}`)
         .join('\n');
     }
 
-    await ctx.reply(text, { parse_mode: 'Markdown' });
+    await ctx.reply(text, { parse_mode: TELEGRAM_HTML });
   });
 }
 

@@ -5,6 +5,7 @@ import { User } from '../models/User';
 import { applyLevelProgressChange, formatLevelLabel } from '../utils/levels';
 import { displayTime, resolveTimezone, todayInTimezone } from '../utils/time';
 import { sendChallenge } from '../utils/challenge';
+import { bold, TELEGRAM_HTML } from '../utils/telegram';
 
 export function registerCallbackHandler(bot: Telegraf) {
   // Callback data format: "answer:<telegramId>:<value>"
@@ -68,19 +69,19 @@ export function registerCallbackHandler(bot: Telegraf) {
 
     await ctx.telegram.sendMessage(
       telegramId,
-      `🌅 *Доброе утро, ${user?.firstName ?? ctx.from.first_name}!*\n\nПодъём засчитан в *${displayTime(now, timezone)}* 🎉${
+      `🌅 ${bold(`Доброе утро, ${user?.firstName ?? ctx.from.first_name}!`)}\n\nПодъём засчитан в ${bold(displayTime(now, timezone))} 🎉${
         progress
-          ? `\n🏅 Текущий уровень: *${formatLevelLabel(progress.currentLevel)}*\n📊 Проснулся дней: *${progress.currentDays}*`
+          ? `\n🏅 Текущий уровень: ${bold(formatLevelLabel(progress.currentLevel))}\n📊 Проснулся дней: ${bold(String(progress.currentDays))}`
           : ''
       }\n\nОтличное начало дня!`,
-      { parse_mode: 'Markdown' }
+      { parse_mode: TELEGRAM_HTML }
     );
 
     if (progress?.leveledUp) {
       await ctx.telegram.sendMessage(
         telegramId,
-        `🎉 *Новый уровень!*\n\nТеперь твой ранг — *${formatLevelLabel(progress.currentLevel)}*\nПродолжай в том же темпе!`,
-        { parse_mode: 'Markdown' }
+        `🎉 <b>Новый уровень!</b>\n\nТеперь твой ранг — ${bold(formatLevelLabel(progress.currentLevel))}\nПродолжай в том же темпе!`,
+        { parse_mode: TELEGRAM_HTML }
       );
     }
 

@@ -11,6 +11,7 @@ import {
 import { formatLevelLabel, getLevelForDays } from '../utils/levels';
 import { APP_TIMEZONE, parseWakeTime, resolveTimezone } from '../utils/time';
 import { mainMenuKeyboard, MENU_BUTTON_COMMANDS } from '../utils/keyboards';
+import { bold, codeInline, escapeHtml, TELEGRAM_HTML } from '../utils/telegram';
 
 // Conversation state: waiting for invite code or wake time
 const awaitingInviteCode = new Set<number>();
@@ -90,9 +91,9 @@ async function handleInviteCodeStep(ctx: Context & { message: { text: string; en
       `🧩 Чтобы подтвердить подъём, я пришлю тебе простую задачку в нужное время.\n` +
       `🔁 Потом пришлю ещё одну проверку через 30 минут, чтобы убедиться, что ты не уснул снова.\n\n` +
       `🏆 У нас действует система уровней. Поднимайся всё выше и дойди до финального ранга.\n\n` +
-      `🌱 Твой стартовый уровень: *${formatLevelLabel(startingLevel)}*\n\n` +
-      `⏰ Введи время подъёма в формате *ЧЧ:ММ*, например \`05:30\``,
-    { parse_mode: 'Markdown' }
+      `🌱 Твой стартовый уровень: ${bold(formatLevelLabel(startingLevel))}\n\n` +
+      `⏰ Введи время подъёма в формате <b>ЧЧ:ММ</b>, например ${codeInline('05:30')}`,
+    { parse_mode: TELEGRAM_HTML }
   );
 }
 
@@ -107,15 +108,15 @@ export function registerStartHandler(bot: Telegraf) {
 
     if (existing) {
       const inviteCodes = await getUserInviteCodes(existing);
-      const inviteCodesText = inviteCodes.map((inviteCode, index) => `${index + 1}. *${inviteCode}*`).join('\n');
+      const inviteCodesText = inviteCodes.map((inviteCode, index) => `${index + 1}. ${bold(inviteCode)}`).join('\n');
       const timezone = resolveTimezone(existing.timezone);
 
       await ctx.reply(
         `👋 Ты уже зарегистрирован!\n\n` +
-          `⏰ Твоё время подъёма: *${existing.targetWakeTime}*\n` +
-          `🌍 Твоя таймзона: *${timezone}*\n` +
+          `⏰ Твоё время подъёма: ${bold(existing.targetWakeTime)}\n` +
+          `🌍 Твоя таймзона: ${bold(timezone)}\n` +
           `🗝 Твои инвайт-коды:\n${inviteCodesText}`,
-        { parse_mode: 'Markdown', ...mainMenuKeyboard }
+        { parse_mode: TELEGRAM_HTML, ...mainMenuKeyboard }
       );
       return;
     }
@@ -127,7 +128,7 @@ export function registerStartHandler(bot: Telegraf) {
 
     await ctx.reply(
       `🔐 Введи код приглашения, чтобы вступить в челлендж ранних подъёмов.`,
-      { parse_mode: 'Markdown' }
+      { parse_mode: TELEGRAM_HTML }
     );
   });
 
@@ -147,11 +148,11 @@ export function registerStartHandler(bot: Telegraf) {
     const inviteCodes = await getUserInviteCodes(user);
 
     await ctx.reply(
-      `🗝 Новый инвайт-код готов: *${inviteCode}*\n\n` +
+      `🗝 Новый инвайт-код готов: ${bold(inviteCode)}\n\n` +
         `👤 Ограничение: один код можно использовать только для одного приглашённого.\n` +
-        `📦 Активных кодов сейчас: *${inviteCodes.length}*\n` +
+        `📦 Активных кодов сейчас: ${bold(String(inviteCodes.length))}\n` +
         `♻️ Если нужен следующий инвайт, снова используй /invite.`,
-      { parse_mode: 'Markdown' }
+      { parse_mode: TELEGRAM_HTML }
     );
   });
 
@@ -175,9 +176,9 @@ export function registerStartHandler(bot: Telegraf) {
         `🧩 Чтобы подтвердить подъём, я пришлю тебе простую задачку в нужное время.\n` +
         `🔁 Потом пришлю ещё одну проверку через 30 минут, чтобы убедиться, что ты не уснул снова.\n\n` +
         `🏆 У нас действует система уровней. Поднимайся всё выше и дойди до финального ранга.\n\n` +
-        `🌱 Твой стартовый уровень: *${formatLevelLabel(startingLevel)}*\n\n` +
-        `⏰ Введи время подъёма в формате *ЧЧ:ММ*, например \`05:30\``,
-      { parse_mode: 'Markdown' }
+        `🌱 Твой стартовый уровень: ${bold(formatLevelLabel(startingLevel))}\n\n` +
+        `⏰ Введи время подъёма в формате <b>ЧЧ:ММ</b>, например ${codeInline('05:30')}`,
+      { parse_mode: TELEGRAM_HTML }
     );
   });
 
@@ -213,8 +214,8 @@ export function registerStartHandler(bot: Telegraf) {
 
     const wakeTime = parseWakeTime(text);
     if (!wakeTime) {
-      await ctx.reply('❌ Неверный формат. Введи время в формате *ЧЧ:ММ*, например `05:30`', {
-        parse_mode: 'Markdown',
+      await ctx.reply(`❌ Неверный формат. Введи время в формате <b>ЧЧ:ММ</b>, например ${codeInline('05:30')}`, {
+        parse_mode: TELEGRAM_HTML,
       });
       return;
     }
@@ -241,10 +242,10 @@ export function registerStartHandler(bot: Telegraf) {
     pendingInviteCodes.delete(id);
 
     await ctx.reply(
-      `✅ Готово. Каждый день в *${wakeTime}* я буду присылать тебе задачку для подтверждения подъёма.\n\n` +
+      `✅ Готово. Каждый день в ${bold(wakeTime)} я буду присылать тебе задачку для подтверждения подъёма.\n\n` +
         `Реши её вовремя, а потом подтверди бодрствование повторной проверкой через 30 минут.\n\n` +
-        `🌍 По умолчанию твой часовой пояс: *${APP_TIMEZONE}*. Если нужно, поменяй его через /timezone.\n\n`,
-      { parse_mode: 'Markdown', ...mainMenuKeyboard }
+        `🌍 По умолчанию твой часовой пояс: ${bold(APP_TIMEZONE)}. Если нужно, поменяй его через /timezone.\n\n`,
+      { parse_mode: TELEGRAM_HTML, ...mainMenuKeyboard }
     );
 
     await notifyUsersAboutNewMember(bot, id, firstName, wakeTime);

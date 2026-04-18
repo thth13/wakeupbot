@@ -1,6 +1,7 @@
 import { Telegraf } from 'telegraf';
 import { User } from '../models/User';
 import { parseWakeTime, resolveTimezone } from '../utils/time';
+import { bold, codeInline, TELEGRAM_HTML } from '../utils/telegram';
 
 const awaitingTimeChange = new Set<number>();
 
@@ -17,10 +18,10 @@ export function registerTimeHandler(bot: Telegraf, awaitingFromStart: Set<number
     awaitingTimeChange.add(id);
     const timezone = resolveTimezone(user.timezone);
     await ctx.reply(
-      `⏰ Текущее время подъёма: *${user.targetWakeTime}*\n\n` +
-        `🌍 Текущая таймзона: *${timezone}*\n\n` +
-        `Введи новое время в формате *ЧЧ:ММ* для своей таймзоны:`,
-      { parse_mode: 'Markdown' }
+      `⏰ Текущее время подъёма: ${bold(user.targetWakeTime)}\n\n` +
+        `🌍 Текущая таймзона: ${bold(timezone)}\n\n` +
+        `Введи новое время в формате <b>ЧЧ:ММ</b> для своей таймзоны:`,
+      { parse_mode: TELEGRAM_HTML }
     );
   });
 
@@ -32,7 +33,7 @@ export function registerTimeHandler(bot: Telegraf, awaitingFromStart: Set<number
 
     const wakeTime = parseWakeTime(ctx.message.text);
     if (!wakeTime) {
-      await ctx.reply('❌ Неверный формат. Введи время как `05:30`', { parse_mode: 'Markdown' });
+      await ctx.reply(`❌ Неверный формат. Введи время как ${codeInline('05:30')}`, { parse_mode: TELEGRAM_HTML });
       return;
     }
 
@@ -40,6 +41,6 @@ export function registerTimeHandler(bot: Telegraf, awaitingFromStart: Set<number
 
     await User.updateOne({ telegramId: id }, { targetWakeTime: wakeTime });
 
-    await ctx.reply(`✅ Время подъёма изменено на *${wakeTime}*`, { parse_mode: 'Markdown' });
+    await ctx.reply(`✅ Время подъёма изменено на ${bold(wakeTime)}`, { parse_mode: TELEGRAM_HTML });
   });
 }

@@ -8,6 +8,7 @@ import {
   TIMEZONE_REGIONS,
   type TimezoneRegionKey,
 } from '../utils/timezones';
+import { bold, TELEGRAM_HTML } from '../utils/telegram';
 
 function isTimezoneRegionKey(value: string): value is TimezoneRegionKey {
   return value in TIMEZONE_REGIONS;
@@ -53,9 +54,9 @@ function buildTimezonePageKeyboard(regionKey: TimezoneRegionKey, page: number) {
 function buildTimezoneMessage(regionKey: TimezoneRegionKey, page: number): string {
   const pageData = getTimezonePage(regionKey, page);
   return (
-    `🌍 *Выбор таймзоны*\n\n` +
-    `Регион: *${pageData.region.title}*\n` +
-    `Страница: *${pageData.page + 1}/${pageData.pageCount}*\n\n` +
+    `🌍 <b>Выбор таймзоны</b>\n\n` +
+    `Регион: ${bold(pageData.region.title)}\n` +
+    `Страница: ${bold(`${pageData.page + 1}/${pageData.pageCount}`)}\n\n` +
     `Выбери свой город или ближайшую к тебе таймзону:`
   );
 }
@@ -72,17 +73,17 @@ export function registerTimezoneHandler(bot: Telegraf) {
     const currentTimezone = resolveTimezone(user.timezone ?? APP_TIMEZONE);
 
     await ctx.reply(
-      `🌍 Текущая таймзона: *${currentTimezone}*\n\nВыбери регион:`,
+      `🌍 Текущая таймзона: ${bold(currentTimezone)}\n\nВыбери регион:`,
       {
-        parse_mode: 'Markdown',
+        parse_mode: TELEGRAM_HTML,
         ...buildRegionKeyboard(),
       }
     );
   });
 
   bot.action('timezone_regions', async (ctx) => {
-    await ctx.editMessageText('🌍 *Выбор таймзоны*\n\nВыбери регион:', {
-      parse_mode: 'Markdown',
+    await ctx.editMessageText('🌍 <b>Выбор таймзоны</b>\n\nВыбери регион:', {
+      parse_mode: TELEGRAM_HTML,
       ...buildRegionKeyboard(),
     });
     await ctx.answerCbQuery();
@@ -98,7 +99,7 @@ export function registerTimezoneHandler(bot: Telegraf) {
     }
 
     await ctx.editMessageText(buildTimezoneMessage(regionKey, page), {
-      parse_mode: 'Markdown',
+      parse_mode: TELEGRAM_HTML,
       ...buildTimezonePageKeyboard(regionKey, page),
     });
     await ctx.answerCbQuery();
@@ -114,7 +115,7 @@ export function registerTimezoneHandler(bot: Telegraf) {
     }
 
     await ctx.editMessageText(buildTimezoneMessage(regionKey, page), {
-      parse_mode: 'Markdown',
+      parse_mode: TELEGRAM_HTML,
       ...buildTimezonePageKeyboard(regionKey, page),
     });
     await ctx.answerCbQuery();
@@ -138,8 +139,8 @@ export function registerTimezoneHandler(bot: Telegraf) {
 
     await User.updateOne({ telegramId: ctx.from.id }, { timezone: timeZone });
 
-    await ctx.editMessageText(`✅ Таймзона сохранена: *${timeZone}*`, {
-      parse_mode: 'Markdown',
+    await ctx.editMessageText(`✅ Таймзона сохранена: ${bold(timeZone)}`, {
+      parse_mode: TELEGRAM_HTML,
     });
     await ctx.answerCbQuery('Таймзона обновлена');
   });

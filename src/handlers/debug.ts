@@ -5,6 +5,7 @@ import { WakeUpEntry } from '../models/WakeUpEntry';
 import { sendChallenge } from '../utils/challenge';
 import { todayInTimezone } from '../utils/time';
 import { debugMenuKeyboard, mainMenuKeyboard, DEBUG_BUTTON_COMMANDS } from '../utils/keyboards';
+import { TELEGRAM_HTML } from '../utils/telegram';
 
 const ADMIN_IDS: Set<number> = new Set(
   (process.env.DEBUG_ADMIN_IDS ?? '')
@@ -25,13 +26,13 @@ async function handleDebugArg(
 ): Promise<void> {
   if (!arg || arg === 'help') {
     await reply(
-      `🛠 *Debug mode*\n\n` +
+      `🛠 <b>Debug mode</b>\n\n` +
         `challenge — отправить себе задачку прямо сейчас\n` +
         `clear — сбросить текущий pending-челлендж\n` +
         `clearentry — удалить свою запись о подъёме за сегодня\n` +
         `reminder — отправить себе pre-wake reminder прямо сейчас\n` +
         `clearreminder — сбросить флаг pre-wake reminder за сегодня`,
-      { parse_mode: 'Markdown', ...debugMenuKeyboard }
+      { parse_mode: TELEGRAM_HTML, ...debugMenuKeyboard }
     );
     return;
   }
