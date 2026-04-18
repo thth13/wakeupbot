@@ -3,7 +3,7 @@ import { User } from '../models/User';
 import { PendingChallenge } from '../models/PendingChallenge';
 import { WakeUpEntry } from '../models/WakeUpEntry';
 import { sendChallenge } from '../utils/challenge';
-import { todayInAppTimezone } from '../utils/time';
+import { todayInTimezone } from '../utils/time';
 import { debugMenuKeyboard, mainMenuKeyboard, DEBUG_BUTTON_COMMANDS } from '../utils/keyboards';
 
 const ADMIN_IDS: Set<number> = new Set(
@@ -66,7 +66,8 @@ async function handleDebugArg(
   }
 
   if (arg === 'clearentry') {
-    const today = todayInAppTimezone();
+    const user = await User.findOne({ telegramId: id }).select('timezone').lean();
+    const today = todayInTimezone(new Date(), user?.timezone);
     const deleted = await WakeUpEntry.deleteOne({ telegramId: id, date: today });
     await reply(
       deleted.deletedCount > 0
@@ -102,7 +103,8 @@ async function handleDebugArg(
   }
 
   if (arg === 'clearreminder') {
-    const today = todayInAppTimezone();
+    const user = await User.findOne({ telegramId: id }).select('timezone').lean();
+    const today = todayInTimezone(new Date(), user?.timezone);
     await User.updateOne(
       { telegramId: id, preWakeReminderDate: today },
       { $unset: { preWakeReminderDate: 1 } }

@@ -1,15 +1,15 @@
 import { Telegraf } from 'telegraf';
 import { WakeUpEntry } from '../models/WakeUpEntry';
 import { User } from '../models/User';
-import { formatLevelLabel, getLevelForDays, getNextLevelForDays } from '../utils/levels';
-import { displayTime, formatHumanDate, formatHumanDateTime, todayInAppTimezone } from '../utils/time';
+import { formatLevelLabel, getLevelForDays } from '../utils/levels';
+import { displayTime, formatHumanDate, formatHumanDateTime, resolveTimezone, todayInTimezone } from '../utils/time';
 
 export function registerStatsHandlers(bot: Telegraf) {
   // /stats — overall leaderboard
   bot.command('stats', async (ctx) => {
     // Показываем все зарегистрированные пользователи, даже если у них 0 подъёмов
     const users = await User.find()
-      .select('telegramId firstName levelDays')
+      .select('telegramId firstName levelDays targetWakeTime timezone')
       .sort({ levelDays: -1, firstName: 1 })
       .lean();
 
@@ -18,11 +18,16 @@ export function registerStatsHandlers(bot: Telegraf) {
       return;
     }
 
-    const streaks = await calculateStreaks(users.map((user) => user.telegramId));
+    const streaks = await calculateStreaks(users.map((user) => ({
+      telegramId: user.telegramId,
+      timezone: user.timezone,
+    })));
+    const totals = await calculateVerifiedTotals(users.map((user) => user.telegramId));
     const rankedUsers = users
       .map((user) => ({
         ...user,
         streak: streaks.get(user.telegramId) ?? 0,
+        total: totals.get(user.telegramId) ?? 0,
         level: getLevelForDays(user.levelDays ?? 0),
       }))
       .sort((left, right) => {
@@ -38,32 +43,20 @@ export function registerStatsHandlers(bot: Telegraf) {
       });
 
     const topUsers = rankedUsers.slice(0, 10);
+    const currentUserId = ctx.from.id;
 
     const lines = topUsers.map((entry, index) => {
-      const levelTitle = entry.level.title;
-      return `${index + 1}. ${entry.level.icon} ${entry.firstName} — ${levelTitle} | ${entry.levelDays} дн. | подряд ${entry.streak} дн.`;
+      const firstLine = `${index + 1}. ${entry.level.icon} ${entry.firstName} — ${entry.level.title}`;
+      const secondLine = `   ⏰ ${entry.targetWakeTime} | 🔥 ${entry.streak} дн. | 📊 всего: ${entry.total} дн.`;
+
+      if (entry.telegramId === currentUserId) {
+        return `*${firstLine}*\n*${secondLine}*`;
+      }
+
+      return `${firstLine}\n${secondLine}`;
     });
 
-    const currentUserIndex = rankedUsers.findIndex((entry) => entry.telegramId === ctx.from.id);
-    const currentUser = currentUserIndex >= 0 ? rankedUsers[currentUserIndex] : null;
-    const userAhead = currentUserIndex > 0 ? rankedUsers[currentUserIndex - 1] : null;
-
-    let footer = '';
-
-    if (currentUser) {
-      footer += `\n\n📈 *ТЫ НА ${currentUserIndex + 1} МЕСТЕ*`;
-
-      const nextLevel = getNextLevelForDays(currentUser.levelDays ?? 0);
-
-      if (nextLevel) {
-        const daysLeft = nextLevel.minDays - (currentUser.levelDays ?? 0);
-        footer += `\n\nДо следующего уровня:\n+${daysLeft} ${formatDayWord(daysLeft)} → ${formatLevelLabel(nextLevel)}`;
-      } else {
-        footer += `\n\nДо следующего уровня:\nМаксимальный уровень достигнут`;
-      }
-    }
-
-    await ctx.reply(`🏆 *РЕЙТИНГ РАННИХ ПОДЪЁМОВ*\n\n${lines.join('\n')}${footer}`, {
+    await ctx.reply(`🏆 *РЕЙТИНГ РАННИХ ПОДЪЁМОВ*\n\n${lines.join('\n')}`, {
       parse_mode: 'Markdown',
     });
   });
@@ -85,17 +78,21 @@ export function registerStatsHandlers(bot: Telegraf) {
     const streak = await calculateStreak(id);
     const total = await WakeUpEntry.countDocuments({ telegramId: id, verified: true });
     const level = getLevelForDays(user.levelDays ?? 0);
+    const timezone = resolveTimezone(user.timezone);
 
     let text = `📈 *Твоя статистика*\n\n`;
     text += `🏅 Уровень: *${formatLevelLabel(level)}*\n`;
     text += `🔥 Текущий стрик: *${streak} дн.*\n`;
     text += `✅ Всего подъёмов: *${total}*\n`;
-    text += `📅 Стартовал: *${formatHumanDateTime(user.createdAt)}*\n`;
+    text += `📅 Стартовал: *${formatHumanDateTime(user.createdAt, timezone)}*\n`;
+    text += `🌍 Таймзона: *${timezone}*\n`;
     text += `⏰ Цель: *${user.targetWakeTime}*\n\n`;
 
     if (entries.length > 0) {
       text += `*Последние 7 подъёмов:*\n`;
-      text += entries.map((entry) => `• ${formatHumanDate(entry.date)} - ${displayTime(entry.wakeUpTime)}`).join('\n');
+      text += entries
+        .map((entry) => `• ${formatHumanDate(entry.date, timezone)} - ${displayTime(entry.wakeUpTime, timezone)}`)
+        .join('\n');
     }
 
     await ctx.reply(text, { parse_mode: 'Markdown' });
@@ -107,34 +104,25 @@ async function calculateStreak(telegramId: number): Promise<number> {
     .sort({ date: -1 })
     .select('date');
 
-  if (entries.length === 0) return 0;
+  const user = await User.findOne({ telegramId }).select('timezone').lean();
+  const todayKey = todayInTimezone(new Date(), user?.timezone);
 
-  let streak = 0;
-  const today = new Date();
-  const todayKey = todayInAppTimezone(today);
-  const todayStart = new Date(`${todayKey}T00:00:00Z`);
-
-  for (let index = 0; index < entries.length; index++) {
-    const entryDate = new Date(entries[index].date + 'T00:00:00Z');
-    const diffDays = Math.round((todayStart.getTime() - entryDate.getTime()) / 86400000);
-
-    if (diffDays === index || diffDays === index + 1) {
-      streak++;
-    } else {
-      break;
-    }
-  }
-
-  return streak;
+  return calculateStreakFromDates(
+    entries.map((entry) => entry.date),
+    todayKey
+  );
 }
 
-async function calculateStreaks(telegramIds: number[]): Promise<Map<number, number>> {
+async function calculateStreaks(
+  users: Array<{ telegramId: number; timezone?: string }>
+): Promise<Map<number, number>> {
   const streaks = new Map<number, number>();
 
-  if (telegramIds.length === 0) {
+  if (users.length === 0) {
     return streaks;
   }
 
+  const telegramIds = users.map((user) => user.telegramId);
   const entries = await WakeUpEntry.find({ telegramId: { $in: telegramIds }, verified: true })
     .sort({ telegramId: 1, date: -1 })
     .select('telegramId date')
@@ -148,21 +136,39 @@ async function calculateStreaks(telegramIds: number[]): Promise<Map<number, numb
     datesByUser.set(entry.telegramId, current);
   }
 
-  for (const telegramId of telegramIds) {
-    streaks.set(telegramId, calculateStreakFromDates(datesByUser.get(telegramId) ?? []));
+  for (const user of users) {
+    const todayKey = todayInTimezone(new Date(), user.timezone);
+    streaks.set(user.telegramId, calculateStreakFromDates(datesByUser.get(user.telegramId) ?? [], todayKey));
   }
 
   return streaks;
 }
 
-function calculateStreakFromDates(dates: string[]): number {
+async function calculateVerifiedTotals(telegramIds: number[]): Promise<Map<number, number>> {
+  const totals = new Map<number, number>();
+
+  if (telegramIds.length === 0) {
+    return totals;
+  }
+
+  const rows = await WakeUpEntry.aggregate<{ _id: number; total: number }>([
+    { $match: { telegramId: { $in: telegramIds }, verified: true } },
+    { $group: { _id: '$telegramId', total: { $sum: 1 } } },
+  ]);
+
+  for (const row of rows) {
+    totals.set(row._id, row.total);
+  }
+
+  return totals;
+}
+
+function calculateStreakFromDates(dates: string[], todayKey: string): number {
   if (dates.length === 0) {
     return 0;
   }
 
   let streak = 0;
-  const today = new Date();
-  const todayKey = todayInAppTimezone(today);
   const todayStart = new Date(`${todayKey}T00:00:00Z`);
 
   for (let index = 0; index < dates.length; index++) {
@@ -178,23 +184,4 @@ function calculateStreakFromDates(dates: string[]): number {
   }
 
   return streak;
-}
-
-function formatDayWord(days: number): string {
-  const absDays = Math.abs(days) % 100;
-  const lastDigit = absDays % 10;
-
-  if (absDays >= 11 && absDays <= 14) {
-    return 'дней';
-  }
-
-  if (lastDigit === 1) {
-    return 'день';
-  }
-
-  if (lastDigit >= 2 && lastDigit <= 4) {
-    return 'дня';
-  }
-
-  return 'дней';
 }

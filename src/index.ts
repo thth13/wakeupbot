@@ -2,8 +2,10 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import path from 'path';
 import { Telegraf } from 'telegraf';
+import { BOT_COMMANDS } from './botCommands';
 import { registerStartHandler } from './handlers/start';
 import { registerTimeHandler } from './handlers/time';
+import { registerTimezoneHandler } from './handlers/timezone';
 import { registerStatsHandlers } from './handlers/stats';
 import { registerCallbackHandler } from './handlers/callback';
 import { registerDebugHandlers } from './handlers/debug';
@@ -72,10 +74,14 @@ async function main() {
   botInstance = bot;
 
   await bot.telegram.deleteMyCommands();
+  await bot.telegram.setMyCommands(
+    BOT_COMMANDS.map(({ command, description }) => ({ command, description }))
+  );
 
   // Register handlers
   const awaitingFromStart = registerStartHandler(bot);
   registerTimeHandler(bot, awaitingFromStart);
+  registerTimezoneHandler(bot);
   registerStatsHandlers(bot);
   registerCallbackHandler(bot);
 

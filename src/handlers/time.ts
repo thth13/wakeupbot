@@ -1,6 +1,6 @@
 import { Telegraf } from 'telegraf';
 import { User } from '../models/User';
-import { parseWakeTime } from '../utils/time';
+import { parseWakeTime, resolveTimezone } from '../utils/time';
 
 const awaitingTimeChange = new Set<number>();
 
@@ -15,9 +15,11 @@ export function registerTimeHandler(bot: Telegraf, awaitingFromStart: Set<number
     }
 
     awaitingTimeChange.add(id);
+    const timezone = resolveTimezone(user.timezone);
     await ctx.reply(
       `⏰ Текущее время подъёма: *${user.targetWakeTime}*\n\n` +
-        `Введи новое время в формате *ЧЧ:ММ*:`,
+        `🌍 Текущая таймзона: *${timezone}*\n\n` +
+        `Введи новое время в формате *ЧЧ:ММ* для своей таймзоны:`,
       { parse_mode: 'Markdown' }
     );
   });

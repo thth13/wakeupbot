@@ -4,20 +4,22 @@ import { User } from '../models/User';
 import { PendingChallenge } from '../models/PendingChallenge';
 import { WakeUpEntry } from '../models/WakeUpEntry';
 import { sendChallenge } from '../utils/challenge';
-import { formatTimeInAppTimezone, todayInAppTimezone } from '../utils/time';
+import { formatTimeInTimezone, resolveTimezone, todayInTimezone } from '../utils/time';
 
 export function startScheduler(bot: Telegraf) {
   // Runs every minute at :00 seconds
   return cron.schedule('* * * * *', async () => {
     const now = new Date();
-    const currentTime = formatTimeInAppTimezone(now);
-    const today = todayInAppTimezone(now);
-
-    // Find active users whose target wake time matches current minute
-    const users = await User.find({ targetWakeTime: currentTime, isActive: true });
+    const users = await User.find({ isActive: true });
 
     for (const user of users) {
       try {
+        const timezone = resolveTimezone(user.timezone);
+        const currentTime = formatTimeInTimezone(now, timezone);
+        const today = todayInTimezone(now, timezone);
+
+        if (user.targetWakeTime !== currentTime) continue;
+
         // Skip if already has a verified entry today
         const alreadyVerified = await WakeUpEntry.findOne({
           telegramId: user.telegramId,
@@ -42,13 +44,15 @@ export function startScheduler(bot: Telegraf) {
 
     // Pre-wake reminder: 1 hour before target wake time
     const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
-    const oneHourLaterTime = formatTimeInAppTimezone(oneHourLater);
-    const wakeDate = todayInAppTimezone(oneHourLater);
 
-    const preWakeUsers = await User.find({ targetWakeTime: oneHourLaterTime, isActive: true });
-
-    for (const user of preWakeUsers) {
+    for (const user of users) {
       try {
+        const timezone = resolveTimezone(user.timezone);
+        const oneHourLaterTime = formatTimeInTimezone(oneHourLater, timezone);
+        const wakeDate = todayInTimezone(oneHourLater, timezone);
+
+        if (user.targetWakeTime !== oneHourLaterTime) continue;
+
         const alreadyVerified = await WakeUpEntry.findOne({
           telegramId: user.telegramId,
           date: wakeDate,

@@ -8,6 +8,7 @@ export interface IUser extends Document {
   inviteCodes: string[];
   invitedByTelegramId?: number;
   invitedWithCode?: string;
+  timezone: string;
   targetWakeTime: string; // "HH:MM" in configured app timezone
   isActive: boolean;
   levelDays: number;
@@ -25,6 +26,7 @@ const UserSchema = new Schema<IUser>(
     inviteCodes: { type: [String], default: [] },
     invitedByTelegramId: { type: Number },
     invitedWithCode: { type: String, index: true },
+    timezone: { type: String, required: true, default: 'Europe/Kiev' },
     targetWakeTime: { type: String, required: true }, // e.g. "05:30"
     isActive: { type: Boolean, default: true },
     levelDays: { type: Number, default: 0 },

@@ -16,6 +16,11 @@ export const BOT_COMMANDS: BotCommandDefinition[] = [
     helpText: '/time — изменить время подъёма',
   },
   {
+    command: 'timezone',
+    description: 'Change your timezone',
+    helpText: '/timezone — изменить таймзону',
+  },
+  {
     command: 'invite',
     description: 'Generate a new single-use invite code',
     helpText: '/invite — сгенерировать новый инвайт-код',

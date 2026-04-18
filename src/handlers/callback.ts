@@ -3,7 +3,7 @@ import { PendingChallenge } from '../models/PendingChallenge';
 import { WakeUpEntry } from '../models/WakeUpEntry';
 import { User } from '../models/User';
 import { applyLevelProgressChange, formatLevelLabel } from '../utils/levels';
-import { displayTime, todayInAppTimezone } from '../utils/time';
+import { displayTime, resolveTimezone, todayInTimezone } from '../utils/time';
 import { sendChallenge } from '../utils/challenge';
 
 export function registerCallbackHandler(bot: Telegraf) {
@@ -42,10 +42,10 @@ export function registerCallbackHandler(bot: Telegraf) {
     challenge.answered = true;
     await challenge.save();
 
-    const now = new Date();
-    const today = todayInAppTimezone(now);
-
     const user = await User.findOne({ telegramId });
+    const timezone = resolveTimezone(user?.timezone);
+    const now = new Date();
+    const today = todayInTimezone(now, timezone);
 
     // Upsert wake-up entry (idempotent)
     await WakeUpEntry.findOneAndUpdate(
@@ -68,11 +68,11 @@ export function registerCallbackHandler(bot: Telegraf) {
 
     await ctx.telegram.sendMessage(
       telegramId,
-      `🌅 *Доброе утро, ${user?.firstName ?? ctx.from.first_name}!*\n\nПодъём засчитан в *${displayTime(now)}* 🎉${
+      `🌅 *Доброе утро, ${user?.firstName ?? ctx.from.first_name}!*\n\nПодъём засчитан в *${displayTime(now, timezone)}* 🎉${
         progress
-          ? `\n🏅 Текущий уровень: *${formatLevelLabel(progress.currentLevel)}*\n📊 Дней прогресса: *${progress.currentDays}*`
+          ? `\n🏅 Текущий уровень: *${formatLevelLabel(progress.currentLevel)}*\n📊 Проснулся дней: *${progress.currentDays}*`
           : ''
-      }\nОтличное начало дня!`,
+      }\n\nОтличное начало дня!`,
       { parse_mode: 'Markdown' }
     );
 
@@ -96,7 +96,9 @@ export function registerCallbackHandler(bot: Telegraf) {
       return;
     }
 
-    const today = todayInAppTimezone(new Date());
+    const user = await User.findOne({ telegramId });
+    const timezone = resolveTimezone(user?.timezone);
+    const today = todayInTimezone(new Date(), timezone);
 
     const alreadyVerified = await WakeUpEntry.findOne({ telegramId, date: today, verified: true });
     if (alreadyVerified) {
@@ -117,7 +119,6 @@ export function registerCallbackHandler(bot: Telegraf) {
       await PendingChallenge.deleteOne({ _id: existing._id });
     }
 
-    const user = await User.findOne({ telegramId });
     if (!user) {
       await ctx.answerCbQuery('Пользователь не найден.');
       return;

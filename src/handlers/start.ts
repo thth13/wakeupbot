@@ -9,7 +9,7 @@ import {
   normalizeInviteCode,
 } from '../utils/inviteCodes';
 import { formatLevelLabel, getLevelForDays } from '../utils/levels';
-import { parseWakeTime } from '../utils/time';
+import { APP_TIMEZONE, parseWakeTime, resolveTimezone } from '../utils/time';
 import { mainMenuKeyboard, MENU_BUTTON_COMMANDS } from '../utils/keyboards';
 
 // Conversation state: waiting for invite code or wake time
@@ -18,14 +18,19 @@ const awaitingWakeTime = new Set<number>();
 const pendingInviterIds = new Map<number, number | null>();
 const pendingInviteCodes = new Map<number, string | null>();
 
-async function notifyUsersAboutNewMember(bot: Telegraf, newUserTelegramId: number, newUserFirstName: string) {
+async function notifyUsersAboutNewMember(
+  bot: Telegraf,
+  newUserTelegramId: number,
+  newUserFirstName: string,
+  newUserWakeTime: string
+) {
   const recipients = await User.find({ telegramId: { $ne: newUserTelegramId } }).select('telegramId').lean();
 
   if (recipients.length === 0) {
     return;
   }
 
-  const message = `🎉 К нам присоединился новый участник — ${newUserFirstName}!`;
+  const message = `🎉 К нам присоединился новый участник — ${newUserFirstName}. Время подъёма: ${newUserWakeTime}`;
 
   await Promise.allSettled(
     recipients.map(({ telegramId }) =>
@@ -103,10 +108,12 @@ export function registerStartHandler(bot: Telegraf) {
     if (existing) {
       const inviteCodes = await getUserInviteCodes(existing);
       const inviteCodesText = inviteCodes.map((inviteCode, index) => `${index + 1}. *${inviteCode}*`).join('\n');
+      const timezone = resolveTimezone(existing.timezone);
 
       await ctx.reply(
         `👋 Ты уже зарегистрирован!\n\n` +
           `⏰ Твоё время подъёма: *${existing.targetWakeTime}*\n` +
+          `🌍 Твоя таймзона: *${timezone}*\n` +
           `🗝 Твои инвайт-коды:\n${inviteCodesText}`,
         { parse_mode: 'Markdown', ...mainMenuKeyboard }
       );
@@ -226,6 +233,7 @@ export function registerStartHandler(bot: Telegraf) {
       inviteCodes: [primaryInviteCode],
       invitedByTelegramId: pendingInviterIds.get(id) ?? undefined,
       invitedWithCode: pendingInviteCodes.get(id) ?? undefined,
+      timezone: APP_TIMEZONE,
       targetWakeTime: wakeTime,
     });
 
@@ -234,11 +242,12 @@ export function registerStartHandler(bot: Telegraf) {
 
     await ctx.reply(
       `✅ Готово. Каждый день в *${wakeTime}* я буду присылать тебе задачку для подтверждения подъёма.\n\n` +
-        `Реши её вовремя, а потом подтверди бодрствование повторной проверкой через 30 минут.`,
+        `Реши её вовремя, а потом подтверди бодрствование повторной проверкой через 30 минут.\n\n` +
+        `🌍 По умолчанию твой часовой пояс: *${APP_TIMEZONE}*. Если нужно, поменяй его через /timezone.\n\n`,
       { parse_mode: 'Markdown', ...mainMenuKeyboard }
     );
 
-    await notifyUsersAboutNewMember(bot, id, firstName);
+    await notifyUsersAboutNewMember(bot, id, firstName, wakeTime);
   });
 
   return awaitingWakeTime;
