@@ -1,5 +1,6 @@
 import { Context, Telegraf } from 'telegraf';
 import { User } from '../models/User';
+import { WakeUpEntry } from '../models/WakeUpEntry';
 import {
   appendUserInviteCode,
   createUniqueInviteCode,
@@ -107,6 +108,17 @@ export function registerStartHandler(bot: Telegraf) {
     const existing = await User.findOne({ telegramId: id });
 
     if (existing) {
+      if (!existing.isActive) {
+        const lasted = await WakeUpEntry.countDocuments({ telegramId: id, verified: true });
+
+        await ctx.reply(
+          `🚫 Ты выбыл из челленджа после ${bold(String(existing.missedChallengesCount ?? 3))} пропусков.\n\n` +
+            `Ты продержался: ${bold(String(lasted))} дн.`,
+          { parse_mode: TELEGRAM_HTML }
+        );
+        return;
+      }
+
       const inviteCodes = await getUserInviteCodes(existing);
       const inviteCodesText = inviteCodes.map((inviteCode, index) => `${index + 1}. ${bold(inviteCode)}`).join('\n');
       const timezone = resolveTimezone(existing.timezone);
@@ -141,6 +153,11 @@ export function registerStartHandler(bot: Telegraf) {
 
     if (!user) {
       await ctx.reply('Сначала зарегистрируйся через /start');
+      return;
+    }
+
+    if (!user.isActive) {
+      await ctx.reply('🚫 Ты уже выбыл из челленджа и не можешь создавать новые инвайты.');
       return;
     }
 

@@ -11,7 +11,9 @@ export interface IUser extends Document {
   timezone: string;
   targetWakeTime: string; // "HH:MM" in configured app timezone
   isActive: boolean;
+  missedChallengesCount: number;
   levelDays: number;
+  droppedOutAt?: Date;
   preWakeReminderDate?: string; // "YYYY-MM-DD" last date pre-wake reminder was sent
   challengeDispatchLockUntil?: Date;
   createdAt: Date;
@@ -29,7 +31,9 @@ const UserSchema = new Schema<IUser>(
     timezone: { type: String, required: true, default: 'Europe/Kiev' },
     targetWakeTime: { type: String, required: true }, // e.g. "05:30"
     isActive: { type: Boolean, default: true },
+    missedChallengesCount: { type: Number, default: 0 },
     levelDays: { type: Number, default: 0 },
+    droppedOutAt: { type: Date },
     preWakeReminderDate: { type: String },
     challengeDispatchLockUntil: { type: Date },
   },

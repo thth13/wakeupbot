@@ -10,7 +10,7 @@ export function registerStatsHandlers(bot: Telegraf) {
   bot.command('stats', async (ctx) => {
     // Показываем все зарегистрированные пользователи, даже если у них 0 подъёмов
     const users = await User.find()
-      .select('telegramId firstName levelDays targetWakeTime timezone')
+      .select('telegramId firstName levelDays targetWakeTime timezone isActive missedChallengesCount droppedOutAt')
       .sort({ levelDays: -1, firstName: 1 })
       .lean();
 
@@ -32,6 +32,10 @@ export function registerStatsHandlers(bot: Telegraf) {
         level: getLevelForDays(user.levelDays ?? 0),
       }))
       .sort((left, right) => {
+        if (left.isActive !== right.isActive) {
+          return left.isActive ? -1 : 1;
+        }
+
         if ((right.levelDays ?? 0) !== (left.levelDays ?? 0)) {
           return (right.levelDays ?? 0) - (left.levelDays ?? 0);
         }
@@ -47,14 +51,27 @@ export function registerStatsHandlers(bot: Telegraf) {
     const currentUserId = ctx.from.id;
 
     const lines = topUsers.map((entry, index) => {
-      const firstLine = `${index + 1}. ${entry.level.icon} ${escapeHtml(entry.firstName)} — ${escapeHtml(entry.level.title)}`;
+      const firstLine = `${index + 1}. ${entry.isActive ? entry.level.icon : '❌'} ${escapeHtml(entry.firstName)} — ${escapeHtml(entry.isActive ? entry.level.title : 'Вылетел')}`;
       const secondLine = `   ⏰ ${entry.targetWakeTime} | 🔥 ${entry.streak} дн. | 📊 всего: ${entry.total} дн.`;
 
-      if (entry.telegramId === currentUserId) {
-        return `<b>${firstLine}</b>\n<b>${secondLine}</b>`;
+      const parts: string[] = [firstLine, secondLine];
+
+      if (entry.isActive) {
+        const misses = entry.missedChallengesCount ?? 0;
+        if (misses > 0) {
+          parts.push(`   ❌ Пропусков: ${misses}/3`);
+        }
+      } else {
+        parts.push(`   🚫 Статус: вылетел после ${entry.missedChallengesCount ?? 3} пропусков`);
       }
 
-      return `${firstLine}\n${secondLine}`;
+      const joined = parts.join('\n');
+
+      if (entry.telegramId === currentUserId) {
+        return `<b>${parts.map((p) => p).join('</b>\n<b>')}</b>`;
+      }
+
+      return joined;
     });
 
     await ctx.reply(`🏆 <b>РЕЙТИНГ РАННИХ ПОДЪЁМОВ</b>\n\n${lines.join('\n')}`, {
@@ -85,7 +102,11 @@ export function registerStatsHandlers(bot: Telegraf) {
     text += `🏅 Уровень: ${bold(formatLevelLabel(level))}\n`;
     text += `🔥 Текущий стрик: ${bold(`${streak} дн.`)}\n`;
     text += `✅ Всего подъёмов: ${bold(String(total))}\n`;
+    text += `❌ Пропусков: ${bold(`${user.missedChallengesCount ?? 0}/3`)}\n`;
     text += `📅 Стартовал: ${bold(formatHumanDateTime(user.createdAt, timezone))}\n`;
+    if (user.droppedOutAt) {
+      text += `🚪 Вылетел: ${bold(formatHumanDateTime(user.droppedOutAt, timezone))}\n`;
+    }
     text += `🌍 Таймзона: ${bold(timezone)}\n`;
     text += `⏰ Цель: ${bold(user.targetWakeTime)}\n\n`;
 

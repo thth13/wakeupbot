@@ -70,6 +70,11 @@ export function registerTimezoneHandler(bot: Telegraf) {
       return;
     }
 
+    if (!user.isActive) {
+      await ctx.reply('🚫 Ты уже выбыл из челленджа. Изменение таймзоны недоступно.');
+      return;
+    }
+
     const currentTimezone = resolveTimezone(user.timezone ?? APP_TIMEZONE);
 
     await ctx.reply(

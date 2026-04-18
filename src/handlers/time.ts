@@ -15,6 +15,11 @@ export function registerTimeHandler(bot: Telegraf, awaitingFromStart: Set<number
       return;
     }
 
+    if (!user.isActive) {
+      await ctx.reply('🚫 Ты уже выбыл из челленджа. Изменение времени подъёма недоступно.');
+      return;
+    }
+
     awaitingTimeChange.add(id);
     const timezone = resolveTimezone(user.timezone);
     await ctx.reply(
