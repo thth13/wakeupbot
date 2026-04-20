@@ -11,6 +11,7 @@ import { registerCallbackHandler } from './handlers/callback';
 import { registerDebugHandlers } from './handlers/debug';
 import { startScheduler } from './jobs/scheduler';
 import { startExpiryJob } from './jobs/expiry';
+import { startDailyReportJob } from './jobs/dailyReport';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
@@ -28,6 +29,7 @@ type StoppableTask = {
 let botInstance: Telegraf | undefined;
 let schedulerTask: StoppableTask | undefined;
 let expiryTask: StoppableTask | undefined;
+let dailyReportTask: StoppableTask | undefined;
 let isShuttingDown = false;
 
 async function shutdown(signal: string): Promise<void> {
@@ -38,6 +40,7 @@ async function shutdown(signal: string): Promise<void> {
 
   schedulerTask?.stop();
   expiryTask?.stop();
+  dailyReportTask?.stop();
 
   try {
     botInstance?.stop(signal);
@@ -90,6 +93,7 @@ async function main() {
   // Start scheduled jobs
   schedulerTask = startScheduler(bot);
   expiryTask = startExpiryJob(bot);
+  dailyReportTask = startDailyReportJob(bot);
 
   await bot.launch();
   console.log('[bot] WakeUp bot started');

@@ -5,7 +5,7 @@ import { PendingChallenge } from '../models/PendingChallenge';
 import { generatePuzzle } from './puzzle';
 import { bold, TELEGRAM_HTML } from './telegram';
 
-const ANSWER_WINDOW_MS = parseInt(process.env.ANSWER_WINDOW_MINUTES ?? '10', 10) * 60 * 1000;
+export const ANSWER_WINDOW_MS = parseInt(process.env.ANSWER_WINDOW_MINUTES ?? '10', 10) * 60 * 1000;
 const CHALLENGE_SEND_LOCK_MS = 30 * 1000;
 
 export async function sendChallenge(bot: Telegraf, user: IUser): Promise<boolean> {
