@@ -13,6 +13,7 @@ export interface IUser extends Document {
   isActive: boolean;
   missedChallengesCount: number;
   levelDays: number;
+  score: number;
   droppedOutAt?: Date;
   preWakeReminderDate?: string; // "YYYY-MM-DD" last date pre-wake reminder was sent
   challengeDispatchLockUntil?: Date;
@@ -33,6 +34,7 @@ const UserSchema = new Schema<IUser>(
     isActive: { type: Boolean, default: true },
     missedChallengesCount: { type: Number, default: 0 },
     levelDays: { type: Number, default: 0 },
+    score: { type: Number, default: 0 },
     droppedOutAt: { type: Date },
     preWakeReminderDate: { type: String },
     challengeDispatchLockUntil: { type: Date },

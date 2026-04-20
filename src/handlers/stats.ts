@@ -2,6 +2,7 @@ import { Telegraf } from 'telegraf';
 import { WakeUpEntry } from '../models/WakeUpEntry';
 import { User } from '../models/User';
 import { formatLevelLabel, getLevelForDays } from '../utils/levels';
+import { MISS_SCORE_PENALTY, WAKE_SCORE_REWARD } from '../utils/score';
 import { displayTime, formatHumanDate, formatHumanDateTime, resolveTimezone, todayInTimezone } from '../utils/time';
 import { bold, escapeHtml, TELEGRAM_HTML } from '../utils/telegram';
 
@@ -101,6 +102,7 @@ export function registerStatsHandlers(bot: Telegraf) {
     let text = `📈 <b>Твоя статистика</b>\n\n`;
     text += `🏅 Уровень: ${bold(formatLevelLabel(level))}\n`;
     text += `🔥 Текущий стрик: ${bold(`${streak} дн.`)}\n`;
+    text += `💠 Баллы: ${bold(String(user.score ?? 0))}\n`;
     text += `✅ Всего подъёмов: ${bold(String(total))}\n`;
     text += `❌ Пропусков: ${bold(`${user.missedChallengesCount ?? 0}/3`)}\n`;
     text += `📅 Стартовал: ${bold(formatHumanDateTime(user.createdAt, timezone))}\n`;

@@ -3,6 +3,7 @@ import { Telegraf } from 'telegraf';
 import { PendingChallenge } from '../models/PendingChallenge';
 import { User } from '../models/User';
 import { applyLevelProgressChange, formatLevelLabel } from '../utils/levels';
+import { applyScoreChange, MISS_SCORE_PENALTY } from '../utils/score';
 
 export function startExpiryJob(bot: Telegraf) {
   // Check every minute for expired challenges
@@ -55,6 +56,7 @@ export function startExpiryJob(bot: Telegraf) {
 
       try {
         const progress = await applyLevelProgressChange(challenge.telegramId, -1);
+        await applyScoreChange(challenge.telegramId, -MISS_SCORE_PENALTY);
         const progressText = progress
           ? `\n\n📉 Прогресс: -1 день\n🏅 Уровень: ${formatLevelLabel(progress.currentLevel)}\n📊 Дней прогресса: ${progress.currentDays}`
           : '';

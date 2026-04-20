@@ -3,6 +3,7 @@ import { PendingChallenge } from '../models/PendingChallenge';
 import { WakeUpEntry } from '../models/WakeUpEntry';
 import { User } from '../models/User';
 import { applyLevelProgressChange, formatLevelLabel } from '../utils/levels';
+import { applyScoreChange, WAKE_SCORE_REWARD } from '../utils/score';
 import { displayTime, resolveTimezone, todayInTimezone } from '../utils/time';
 import { sendChallenge } from '../utils/challenge';
 import { bold, TELEGRAM_HTML } from '../utils/telegram';
@@ -64,6 +65,7 @@ export function registerCallbackHandler(bot: Telegraf) {
     );
 
     const progress = await applyLevelProgressChange(telegramId, 1);
+    await applyScoreChange(telegramId, WAKE_SCORE_REWARD);
 
     await ctx.editMessageText('✅ Задачка решена!');
 
