@@ -1,8 +1,8 @@
-import { Telegraf } from 'telegraf';
+import { Markup, Telegraf } from 'telegraf';
 import { WakeUpEntry } from '../models/WakeUpEntry';
 import { User } from '../models/User';
 import { formatLevelLabel, getLevelForDays } from '../utils/levels';
-import { MISS_SCORE_PENALTY, WAKE_SCORE_REWARD } from '../utils/score';
+import { MISS_REMOVAL_COST } from '../utils/score';
 import { displayTime, formatHumanDate, formatHumanDateTime, resolveTimezone, todayInTimezone } from '../utils/time';
 import { bold, escapeHtml, TELEGRAM_HTML } from '../utils/telegram';
 
@@ -83,43 +83,159 @@ export function registerStatsHandlers(bot: Telegraf) {
   // /mystats — personal streak & history
   bot.command('mystats', async (ctx) => {
     const id = ctx.from.id;
-    const user = await User.findOne({ telegramId: id });
+    const view = await buildPersonalStatsView(id);
 
-    if (!user) {
+    if (!view) {
       await ctx.reply('Сначала зарегистрируйся через /start');
       return;
     }
 
-    const entries = await WakeUpEntry.find({ telegramId: id, verified: true })
-      .sort({ date: -1 })
-      .limit(7);
+    await ctx.reply(view.text, {
+      parse_mode: TELEGRAM_HTML,
+      ...view.keyboard,
+    });
+  });
 
-    const streak = await calculateStreak(id);
-    const total = await WakeUpEntry.countDocuments({ telegramId: id, verified: true });
-    const level = getLevelForDays(user.levelDays ?? 0);
-    const timezone = resolveTimezone(user.timezone);
+  bot.action(/^buy_miss_removal:(\d+)$/, async (ctx) => {
+    const telegramId = parseInt(ctx.match[1], 10);
 
-    let text = `📈 <b>Твоя статистика</b>\n\n`;
-    text += `🏅 Уровень: ${bold(formatLevelLabel(level))}\n`;
-    text += `🔥 Текущий стрик: ${bold(`${streak} дн.`)}\n`;
-    text += `💠 Баллы: ${bold(String(user.score ?? 0))}\n`;
-    text += `✅ Всего подъёмов: ${bold(String(total))}\n`;
-    text += `❌ Пропусков: ${bold(`${user.missedChallengesCount ?? 0}/3`)}\n`;
-    text += `📅 Стартовал: ${bold(formatHumanDateTime(user.createdAt, timezone))}\n`;
-    if (user.droppedOutAt) {
-      text += `🚪 Вылетел: ${bold(formatHumanDateTime(user.droppedOutAt, timezone))}\n`;
-    }
-    text += `🌍 Таймзона: ${bold(timezone)}\n`;
-    text += `⏰ Цель: ${bold(user.targetWakeTime)}\n\n`;
-
-    if (entries.length > 0) {
-      text += `<b>Последние 7 подъёмов:</b>\n`;
-      text += entries
-        .map((entry) => `• ${escapeHtml(formatHumanDate(entry.date, timezone))} - ${escapeHtml(displayTime(entry.wakeUpTime, timezone))}`)
-        .join('\n');
+    if (ctx.from.id !== telegramId) {
+      await ctx.answerCbQuery('Это не твоя кнопка!');
+      return;
     }
 
-    await ctx.reply(text, { parse_mode: TELEGRAM_HTML });
+    const user = await User.findOne({ telegramId });
+
+    if (!user) {
+      await ctx.answerCbQuery('Пользователь не найден.');
+      return;
+    }
+
+    if ((user.missedChallengesCount ?? 0) <= 0) {
+      await ctx.answerCbQuery('У тебя нет пропусков для удаления.');
+      await refreshPersonalStatsMessage(ctx, telegramId);
+      return;
+    }
+
+    if ((user.score ?? 0) < MISS_REMOVAL_COST) {
+      await ctx.answerCbQuery(`Нужно ${MISS_REMOVAL_COST} баллов.`);
+      await refreshPersonalStatsMessage(ctx, telegramId);
+      return;
+    }
+
+    const nextMisses = Math.max(0, (user.missedChallengesCount ?? 0) - 1);
+    const wasDroppedOut = !user.isActive;
+
+    user.score = Math.max(0, (user.score ?? 0) - MISS_REMOVAL_COST);
+    user.missedChallengesCount = nextMisses;
+
+    if (nextMisses < 3) {
+      user.isActive = true;
+      user.droppedOutAt = undefined;
+    }
+
+    await user.save();
+    await refreshPersonalStatsMessage(ctx, telegramId);
+
+    await ctx.answerCbQuery(
+      wasDroppedOut && nextMisses < 3
+        ? 'Пропуск удалён. Ты снова в игре.'
+        : 'Пропуск удалён.'
+    );
+  });
+
+  bot.action(/^buy_miss_removal_disabled:(\d+)$/, async (ctx) => {
+    const telegramId = parseInt(ctx.match[1], 10);
+
+    if (ctx.from.id !== telegramId) {
+      await ctx.answerCbQuery('Это не твоя кнопка!');
+      return;
+    }
+
+    const user = await User.findOne({ telegramId }).select('score missedChallengesCount');
+
+    if (!user) {
+      await ctx.answerCbQuery('Пользователь не найден.');
+      return;
+    }
+
+    if ((user.missedChallengesCount ?? 0) <= 0) {
+      await ctx.answerCbQuery('У тебя нет пропусков для удаления.');
+      return;
+    }
+
+    await ctx.answerCbQuery(`Недостаточно баллов. Нужно ${MISS_REMOVAL_COST}.`);
+  });
+}
+
+async function buildPersonalStatsView(telegramId: number) {
+  const user = await User.findOne({ telegramId });
+
+  if (!user) {
+    return null;
+  }
+
+  const entries = await WakeUpEntry.find({ telegramId, verified: true })
+    .sort({ date: -1 })
+    .limit(7);
+
+  const streak = await calculateStreak(telegramId);
+  const total = await WakeUpEntry.countDocuments({ telegramId, verified: true });
+  const level = getLevelForDays(user.levelDays ?? 0);
+  const timezone = resolveTimezone(user.timezone);
+
+  let text = `📈 <b>Твоя статистика</b>\n\n`;
+  text += `🏅 Уровень: ${bold(formatLevelLabel(level))}\n`;
+  text += `🔥 Текущий стрик: ${bold(`${streak} дн.`)}\n`;
+  text += `💠 Баллы: ${bold(String(user.score ?? 0))}\n`;
+  text += `✅ Всего подъёмов: ${bold(String(total))}\n`;
+  text += `❌ Пропусков: ${bold(`${user.missedChallengesCount ?? 0}/3`)}\n`;
+  text += `📅 Стартовал: ${bold(formatHumanDateTime(user.createdAt, timezone))}\n`;
+  if (user.droppedOutAt) {
+    text += `🚪 Вылетел: ${bold(formatHumanDateTime(user.droppedOutAt, timezone))}\n`;
+  }
+  text += `🌍 Таймзона: ${bold(timezone)}\n`;
+  text += `⏰ Цель: ${bold(user.targetWakeTime)}\n\n`;
+
+  if (entries.length > 0) {
+    text += `<b>Последние 7 подъёмов:</b>\n`;
+    text += entries
+      .map((entry) => `• ${escapeHtml(formatHumanDate(entry.date, timezone))} - ${escapeHtml(displayTime(entry.wakeUpTime, timezone))}`)
+      .join('\n');
+  }
+
+  return {
+    text,
+    keyboard: buildMissRemovalKeyboard(user.telegramId, user.score ?? 0, user.missedChallengesCount ?? 0),
+  };
+}
+
+function buildMissRemovalKeyboard(telegramId: number, score: number, missedChallengesCount: number) {
+  if (missedChallengesCount <= 0) {
+    return undefined;
+  }
+
+  if (score < MISS_REMOVAL_COST) {
+    return Markup.inlineKeyboard([
+      [Markup.button.callback(`⛔ Удалить пропуск за ${MISS_REMOVAL_COST} баллов`, `buy_miss_removal_disabled:${telegramId}`)],
+    ]);
+  }
+
+  return Markup.inlineKeyboard([
+    [Markup.button.callback(`🩹 Удалить пропуск за ${MISS_REMOVAL_COST} баллов`, `buy_miss_removal:${telegramId}`)],
+  ]);
+}
+
+async function refreshPersonalStatsMessage(ctx: unknown, telegramId: number) {
+  const view = await buildPersonalStatsView(telegramId);
+
+  if (!view) {
+    return;
+  }
+
+  await (ctx as unknown as { editMessageText: (text: string, extra: Record<string, unknown>) => Promise<unknown> }).editMessageText(view.text, {
+    parse_mode: TELEGRAM_HTML,
+    ...view.keyboard,
   });
 }
 

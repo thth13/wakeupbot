@@ -2,6 +2,7 @@ import { User } from '../models/User';
 
 export const WAKE_SCORE_REWARD = 10;
 export const MISS_SCORE_PENALTY = 5;
+export const MISS_REMOVAL_COST = 30;
 
 export interface ScoreChangeResult {
   previousScore: number;
