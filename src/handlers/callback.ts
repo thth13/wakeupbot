@@ -6,7 +6,7 @@ import { applyLevelProgressChange, formatLevelLabel } from '../utils/levels';
 import { applyScoreChange, WAKE_SCORE_REWARD } from '../utils/score';
 import { displayTime, resolveTimezone, todayInTimezone } from '../utils/time';
 import { sendChallenge } from '../utils/challenge';
-import { bold, TELEGRAM_HTML } from '../utils/telegram';
+import { bold, isTelegramMessageNotModifiedError, TELEGRAM_HTML } from '../utils/telegram';
 
 export function registerCallbackHandler(bot: Telegraf) {
   // Callback data format: "answer:<telegramId>:<value>"
@@ -24,14 +24,26 @@ export function registerCallbackHandler(bot: Telegraf) {
 
     if (!challenge) {
       await ctx.answerCbQuery('Время вышло или задачка уже решена.');
-      await ctx.editMessageReplyMarkup(undefined);
+      try {
+        await ctx.editMessageReplyMarkup(undefined);
+      } catch (error) {
+        if (!isTelegramMessageNotModifiedError(error)) {
+          throw error;
+        }
+      }
       return;
     }
 
     if (new Date() > challenge.expiresAt) {
       await PendingChallenge.deleteOne({ _id: challenge._id });
       await ctx.answerCbQuery('⏰ Время вышло!');
-      await ctx.editMessageText('⏰ Время на ответ вышло. До завтра!');
+      try {
+        await ctx.editMessageText('⏰ Время на ответ вышло. До завтра!');
+      } catch (error) {
+        if (!isTelegramMessageNotModifiedError(error)) {
+          throw error;
+        }
+      }
       return;
     }
 
@@ -67,7 +79,13 @@ export function registerCallbackHandler(bot: Telegraf) {
     const progress = await applyLevelProgressChange(telegramId, 1);
     await applyScoreChange(telegramId, WAKE_SCORE_REWARD);
 
-    await ctx.editMessageText('✅ Задачка решена!');
+    try {
+      await ctx.editMessageText('✅ Задачка решена!');
+    } catch (error) {
+      if (!isTelegramMessageNotModifiedError(error)) {
+        throw error;
+      }
+    }
 
     await ctx.telegram.sendMessage(
       telegramId,
@@ -106,7 +124,13 @@ export function registerCallbackHandler(bot: Telegraf) {
     const alreadyVerified = await WakeUpEntry.findOne({ telegramId, date: today, verified: true });
     if (alreadyVerified) {
       await ctx.answerCbQuery('Ты уже засчитан сегодня!');
-      await ctx.editMessageReplyMarkup(undefined);
+      try {
+        await ctx.editMessageReplyMarkup(undefined);
+      } catch (error) {
+        if (!isTelegramMessageNotModifiedError(error)) {
+          throw error;
+        }
+      }
       return;
     }
 
@@ -115,7 +139,13 @@ export function registerCallbackHandler(bot: Telegraf) {
       if (new Date() <= existing.expiresAt) {
         // Valid unanswered challenge exists — let the user answer it
         await ctx.answerCbQuery('Задачка уже отправлена, реши её!');
-        await ctx.editMessageReplyMarkup(undefined);
+        try {
+          await ctx.editMessageReplyMarkup(undefined);
+        } catch (error) {
+          if (!isTelegramMessageNotModifiedError(error)) {
+            throw error;
+          }
+        }
         return;
       }
       // Expired — delete and send fresh one
@@ -127,7 +157,13 @@ export function registerCallbackHandler(bot: Telegraf) {
       return;
     }
 
-    await ctx.editMessageText('👍 Отлично, раньше будильника! Держи задачку:');
+    try {
+      await ctx.editMessageText('👍 Отлично, раньше будильника! Держи задачку:');
+    } catch (error) {
+      if (!isTelegramMessageNotModifiedError(error)) {
+        throw error;
+      }
+    }
     await sendChallenge(bot, user);
     await ctx.answerCbQuery('🌅 Проснулся раньше — молодец!');
   });

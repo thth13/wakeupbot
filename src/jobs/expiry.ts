@@ -4,6 +4,7 @@ import { PendingChallenge } from '../models/PendingChallenge';
 import { User } from '../models/User';
 import { applyLevelProgressChange, formatLevelLabel } from '../utils/levels';
 import { applyScoreChange, MISS_SCORE_PENALTY } from '../utils/score';
+import { isTelegramMessageNotModifiedError } from '../utils/telegram';
 
 export function startExpiryJob(bot: Telegraf) {
   // Check every minute for expired challenges
@@ -65,15 +66,23 @@ export function startExpiryJob(bot: Telegraf) {
           : `\n\n❌ Пропусков: ${missedChallengesCount}/3`;
 
         if (challenge.messageId) {
-          await bot.telegram.editMessageText(
-            challenge.chatId,
-            challenge.messageId,
-            undefined,
-            `⏰ Время вышло! Задачка не решена.${statusText}${progressText}`
-          );
+          try {
+            await bot.telegram.editMessageText(
+              challenge.chatId,
+              challenge.messageId,
+              undefined,
+              `⏰ Время вышло! Задачка не решена.${statusText}${progressText}`
+            );
+          } catch (error) {
+            if (!isTelegramMessageNotModifiedError(error)) {
+              throw error;
+            }
+          }
         }
-      } catch {
-        // Message may already be deleted or edited — ignore
+      } catch (error) {
+        if (!isTelegramMessageNotModifiedError(error)) {
+          throw error;
+        }
       }
     }
   });
