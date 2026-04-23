@@ -308,20 +308,28 @@ function calculateStreakFromDates(dates: string[], todayKey: string): number {
     return 0;
   }
 
-  let streak = 0;
-  const todayStart = new Date(`${todayKey}T00:00:00Z`);
+  const firstDiff = diffDaysBetween(todayKey, dates[0]);
 
-  for (let index = 0; index < dates.length; index++) {
-    const entryDate = new Date(dates[index] + 'T00:00:00Z');
-    const diffDays = Math.round((todayStart.getTime() - entryDate.getTime()) / 86400000);
+  if (firstDiff !== 0 && firstDiff !== 1) {
+    return 0;
+  }
 
-    if (diffDays === index || diffDays === index + 1) {
-      streak++;
-      continue;
+  let streak = 1;
+
+  for (let index = 1; index < dates.length; index++) {
+    if (diffDaysBetween(dates[index - 1], dates[index]) !== 1) {
+      break;
     }
 
-    break;
+    streak++;
   }
 
   return streak;
+}
+
+function diffDaysBetween(laterDate: string, earlierDate: string): number {
+  const later = new Date(`${laterDate}T00:00:00Z`);
+  const earlier = new Date(`${earlierDate}T00:00:00Z`);
+
+  return Math.round((later.getTime() - earlier.getTime()) / 86400000);
 }
