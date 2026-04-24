@@ -30,6 +30,7 @@ export function registerStatsHandlers(bot: Telegraf) {
         ...user,
         streak: streaks.get(user.telegramId) ?? 0,
         total: totals.get(user.telegramId) ?? 0,
+        misses: user.missedChallengesCount ?? 0,
         level: getLevelForDays(user.levelDays ?? 0),
       }))
       .sort((left, right) => {
@@ -39,6 +40,10 @@ export function registerStatsHandlers(bot: Telegraf) {
 
         if ((right.levelDays ?? 0) !== (left.levelDays ?? 0)) {
           return (right.levelDays ?? 0) - (left.levelDays ?? 0);
+        }
+
+        if (left.misses !== right.misses) {
+          return left.misses - right.misses;
         }
 
         if (right.streak !== left.streak) {
@@ -58,7 +63,7 @@ export function registerStatsHandlers(bot: Telegraf) {
       const parts: string[] = [firstLine, secondLine];
 
       if (entry.isActive) {
-        const misses = entry.missedChallengesCount ?? 0;
+        const misses = entry.misses;
         if (misses > 0) {
           parts.push(`   ❌ Пропусков: ${misses}/3`);
         }
