@@ -38,8 +38,8 @@ export function registerStatsHandlers(bot: Telegraf) {
           return left.isActive ? -1 : 1;
         }
 
-        if ((right.levelDays ?? 0) !== (left.levelDays ?? 0)) {
-          return (right.levelDays ?? 0) - (left.levelDays ?? 0);
+        if (right.total !== left.total) {
+          return right.total - left.total;
         }
 
         if (left.misses !== right.misses) {
