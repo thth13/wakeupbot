@@ -16,6 +16,9 @@ export interface IUser extends Document {
   score: number;
   droppedOutAt?: Date;
   preWakeReminderDate?: string; // "YYYY-MM-DD" last date pre-wake reminder was sent
+  wakeConfirmedDate?: string; // "YYYY-MM-DD" date when user pressed the wake button
+  wakeWindowClosedDate?: string; // "YYYY-MM-DD" date when wake window miss was recorded
+  delayedChallengeAt?: Date; // UTC time when to fire the delayed puzzle
   challengeDispatchLockUntil?: Date;
   createdAt: Date;
 }
@@ -37,6 +40,9 @@ const UserSchema = new Schema<IUser>(
     score: { type: Number, default: 0 },
     droppedOutAt: { type: Date },
     preWakeReminderDate: { type: String },
+    wakeConfirmedDate: { type: String },
+    wakeWindowClosedDate: { type: String },
+    delayedChallengeAt: { type: Date },
     challengeDispatchLockUntil: { type: Date },
   },
   { timestamps: true }

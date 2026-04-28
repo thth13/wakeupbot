@@ -4,8 +4,7 @@ import { WakeUpEntry } from '../models/WakeUpEntry';
 import { User } from '../models/User';
 import { applyLevelProgressChange, formatLevelLabel } from '../utils/levels';
 import { applyScoreChange, WAKE_SCORE_REWARD } from '../utils/score';
-import { displayTime, resolveTimezone, todayInTimezone } from '../utils/time';
-import { sendChallenge } from '../utils/challenge';
+import { displayTime, formatTimeInTimezone, resolveTimezone, todayInTimezone } from '../utils/time';
 import { bold, isTelegramMessageNotModifiedError, TELEGRAM_HTML } from '../utils/telegram';
 
 export function registerCallbackHandler(bot: Telegraf) {
@@ -108,7 +107,7 @@ export function registerCallbackHandler(bot: Telegraf) {
     await ctx.answerCbQuery('🌅 Отличный подъём!');
   });
 
-  // Early wakeup: user pressed "I already woke up" from the pre-wake reminder
+  // Early wakeup: user pressed "I woke up" from the pre-wake reminder
   bot.action(/^early_wakeup:(\d+)$/, async (ctx) => {
     const telegramId = parseInt(ctx.match[1], 10);
 
@@ -118,53 +117,74 @@ export function registerCallbackHandler(bot: Telegraf) {
     }
 
     const user = await User.findOne({ telegramId });
-    const timezone = resolveTimezone(user?.timezone);
-    const today = todayInTimezone(new Date(), timezone);
-
-    const alreadyVerified = await WakeUpEntry.findOne({ telegramId, date: today, verified: true });
-    if (alreadyVerified) {
-      await ctx.answerCbQuery('Ты уже засчитан сегодня!');
-      try {
-        await ctx.editMessageReplyMarkup(undefined);
-      } catch (error) {
-        if (!isTelegramMessageNotModifiedError(error)) {
-          throw error;
-        }
-      }
-      return;
-    }
-
-    const existing = await PendingChallenge.findOne({ telegramId, answered: false });
-    if (existing) {
-      if (new Date() <= existing.expiresAt) {
-        // Valid unanswered challenge exists — let the user answer it
-        await ctx.answerCbQuery('Задачка уже отправлена, реши её!');
-        try {
-          await ctx.editMessageReplyMarkup(undefined);
-        } catch (error) {
-          if (!isTelegramMessageNotModifiedError(error)) {
-            throw error;
-          }
-        }
-        return;
-      }
-      // Expired — delete and send fresh one
-      await PendingChallenge.deleteOne({ _id: existing._id });
-    }
-
     if (!user) {
       await ctx.answerCbQuery('Пользователь не найден.');
       return;
     }
 
-    try {
-      await ctx.editMessageText('👍 Отлично, раньше будильника! Держи задачку:');
-    } catch (error) {
-      if (!isTelegramMessageNotModifiedError(error)) {
-        throw error;
+    const timezone = resolveTimezone(user.timezone);
+    const now = new Date();
+    const today = todayInTimezone(now, timezone);
+
+    const alreadyVerified = await WakeUpEntry.findOne({ telegramId, date: today, verified: true });
+    if (alreadyVerified) {
+      await ctx.answerCbQuery('Подъём уже засчитан сегодня!');
+      try {
+        await ctx.editMessageReplyMarkup(undefined);
+      } catch (error) {
+        if (!isTelegramMessageNotModifiedError(error)) throw error;
       }
+      return;
     }
-    await sendChallenge(bot, user);
-    await ctx.answerCbQuery('🌅 Проснулся раньше — молодец!');
+
+    // Check if already confirmed (button pressed earlier)
+    if (user.wakeConfirmedDate === today) {
+      await ctx.answerCbQuery('Ты уже подтвердил пробуждение — жди задачку!');
+      try {
+        await ctx.editMessageReplyMarkup(undefined);
+      } catch (error) {
+        if (!isTelegramMessageNotModifiedError(error)) throw error;
+      }
+      return;
+    }
+
+    // Check if the 10-minute wake window is still open
+    // Compute wake time UTC: delta = (wakeTime in local mins) - (current local mins)
+    const currentTimeStr = formatTimeInTimezone(now, timezone);
+    const [wH, wM] = user.targetWakeTime.split(':').map(Number);
+    const [curH, curM] = currentTimeStr.split(':').map(Number);
+    let deltaMins = (wH * 60 + wM) - (curH * 60 + curM);
+    if (deltaMins > 720) deltaMins -= 1440;
+    if (deltaMins < -720) deltaMins += 1440;
+    const wakeTimeUTC = new Date(now.getTime() + deltaMins * 60 * 1000);
+
+    // If more than 10 minutes past the scheduled wake time → too late
+    if (now.getTime() > wakeTimeUTC.getTime() + 10 * 60 * 1000) {
+      await ctx.answerCbQuery('Время подъёма уже прошло.');
+      try {
+        await ctx.editMessageText('⏰ Окно подъёма закрыто. Пропуск будет засчитан.');
+      } catch (error) {
+        if (!isTelegramMessageNotModifiedError(error)) throw error;
+      }
+      return;
+    }
+
+    // Schedule delayed challenge: random moment within 1 hour after wake time
+    const startMs = Math.max(now.getTime(), wakeTimeUTC.getTime());
+    const delayedChallengeAt = new Date(startMs + Math.floor(Math.random() * 60 * 60 * 1000));
+
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { wakeConfirmedDate: today, delayedChallengeAt } }
+    );
+
+    try {
+      await ctx.editMessageText(
+        '✅ Принято! В течение часа тебе придёт задачка — у тебя будет 5 минут на ответ. Не пропусти!'
+      );
+    } catch (error) {
+      if (!isTelegramMessageNotModifiedError(error)) throw error;
+    }
+    await ctx.answerCbQuery('Подъём отмечен! Жди задачку 👀');
   });
 }
