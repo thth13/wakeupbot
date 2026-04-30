@@ -80,7 +80,7 @@ export function registerStatsHandlers(bot: Telegraf) {
       return joined;
     });
 
-    await ctx.reply(`🏆 <b>РЕЙТИНГ РАННИХ ПОДЪЁМОВ</b>\n\n${lines.join('\n')}`, {
+    await ctx.reply(`🏆 <b>РЕЙТИНГ РАННИХ ПОДЪЁМОВ</b>\n\n${lines.join('\n\n')}`, {
       parse_mode: TELEGRAM_HTML,
     });
   });
